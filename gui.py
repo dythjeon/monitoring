@@ -20,17 +20,34 @@ REFRESH_INTERVAL_SEC = 1800  # 30분마다 자동 갱신
 GANTT_WINDOW_DAYS = 7        # 간트 차트에 표시할 최대 기간(고정값)
 
 # ---- surff.kr 느낌의 라이트/미니멀 팔레트 ----
-COLOR_BG = "#f7f8fa"          # 페이지 배경 (아주 옅은 회색)
+COLOR_BG = "#f4f5f8"          # 페이지 배경 (아주 옅은 회색)
 COLOR_CARD = "#ffffff"        # 카드 배경
-COLOR_BORDER = "#e7e9ee"      # 카드 테두리
-COLOR_TEXT = "#111827"        # 본문/제목 텍스트
+COLOR_BORDER = "#edeef2"      # 카드 테두리 (그림자와 함께 아주 옅게)
+COLOR_TEXT = "#0b0f19"        # 본문/제목 텍스트
 COLOR_MUTED = "#8a8f98"       # 보조 텍스트
 COLOR_PRIMARY = "#2f6fed"     # 포인트 블루
+COLOR_PRIMARY_DARK = "#1d4fc4"  # 포인트 블루(진한 톤, 그라디언트/그림자용)
 COLOR_PRIMARY_SOFT = "#eaf1fe"
-COLOR_TRACK = "#f1f2f5"       # 세그먼트 탭 트랙 배경
+COLOR_TRACK = "#eef0f4"       # 세그먼트 탭 트랙 배경
 COLOR_ROW_ALT = "#f7f8fb"     # 간트 행 줄무늬(짝수 행)
 COLOR_GRID_MAJOR = "#dfe2e8"  # 날짜 경계 세로선
 COLOR_GRID_MINOR = "#eef0f4"  # 6시간 보조 세로선
+COLOR_SHADOW = "#c3c8d4"      # 카드 아래 그림자 베이스 톤
+
+
+def _hex_to_rgb(h):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _rgb_to_hex(rgb):
+    return "#%02x%02x%02x" % tuple(max(0, min(255, round(c))) for c in rgb)
+
+
+def _blend(color_a, color_b, t):
+    """color_a와 color_b를 t(0~1) 비율로 섞은 색을 반환한다. t=0이면 color_a."""
+    a, b = _hex_to_rgb(color_a), _hex_to_rgb(color_b)
+    return _rgb_to_hex(tuple(a[i] + (b[i] - a[i]) * t for i in range(3)))
 
 REGION_COLOR = {"부산": "#2f6fed", "인천": "#f5a524", "광양": "#12b886"}
 REGION_LABEL = {"전체": "전체", "부산": "부산항 · BPTC·HPNT",
@@ -113,9 +130,21 @@ class Card:
         if w < 4 or h < 4:
             return
         self.canvas.delete("bg")
+        self.canvas.delete("shadow")
+        # 은은한 그림자: tk는 반투명 합성을 못 하므로, 그림자 톤에서 배경색으로
+        # 점점 옅어지는 둥근 사각형을 몇 겹 겹쳐 그려 부드러운 그림자를 흉내낸다.
+        bg_page = self.container["bg"]
+        layers = 6
+        for i in range(layers, 0, -1):
+            t = (i / layers) ** 1.4
+            offset = 7 * (i / layers)
+            col = _blend(COLOR_SHADOW, bg_page, t)
+            _round_rect(self.canvas, 1, 1 + offset * 0.6, w - 1, h - 1 + offset,
+                        radius=self.radius + i * 0.5, fill=col, outline="", tags="shadow")
         _round_rect(self.canvas, 1, 1, w - 1, h - 1, radius=self.radius,
                     fill=COLOR_CARD, outline=COLOR_BORDER, width=1, tags="bg")
         self.canvas.tag_lower("bg")
+        self.canvas.tag_lower("shadow")
         iw, ih = max(w - 2 * self.pad, 10), max(h - 2 * self.pad, 10)
         if self._win is None:
             self._win = self.canvas.create_window(self.pad, self.pad, anchor="nw", window=self.inner)
@@ -127,25 +156,32 @@ class Card:
 
 
 class Segmented(tk.Frame):
-    """rounded pill 스타일 탭 선택기."""
+    """rounded pill 스타일 탭 선택기. 트랙 전체를 하나의 캔버스로 그려
+    둥근 알약 모양 컨테이너 느낌을 낸다."""
+
+    PILL_W = 106
+    PILL_H = 38
+    PAD = 5
+    GAP = 3
 
     def __init__(self, master, options, command):
         super().__init__(master, bg=COLOR_BG)
         self.command = command
+        self.options = options
         self.active = options[0]
-        self.canvases = {}
 
-        track = tk.Frame(self, bg=COLOR_TRACK)
-        track.pack(padx=0, pady=0)
-        inner = tk.Frame(track, bg=COLOR_TRACK, padx=4, pady=4)
-        inner.pack()
-
-        for key in options:
-            c = tk.Canvas(inner, width=104, height=38, bg=COLOR_TRACK, highlightthickness=0, bd=0)
-            c.pack(side="left", padx=2)
-            c.bind("<Button-1>", lambda e, k=key: self.select(k))
-            self.canvases[key] = c
+        w = self.PAD * 2 + self.PILL_W * len(options)
+        h = self.PAD * 2 + self.PILL_H
+        self.canvas = tk.Canvas(self, width=w, height=h, bg=COLOR_BG,
+                                 highlightthickness=0, bd=0)
+        self.canvas.pack()
+        self.canvas.bind("<Button-1>", self._on_click)
         self._render()
+
+    def _on_click(self, event):
+        idx = int((event.x - self.PAD) // self.PILL_W)
+        if 0 <= idx < len(self.options) and event.y >= self.PAD:
+            self.select(self.options[idx])
 
     def select(self, key):
         if key == self.active:
@@ -155,32 +191,39 @@ class Segmented(tk.Frame):
         self.command(key)
 
     def _render(self):
-        for key, c in self.canvases.items():
-            c.delete("all")
-            w, h = int(c["width"]), int(c["height"])
+        self.canvas.delete("all")
+        w = self.PAD * 2 + self.PILL_W * len(self.options)
+        h = self.PAD * 2 + self.PILL_H
+        _round_rect(self.canvas, 0, 0, w, h, radius=h / 2, fill=COLOR_TRACK, outline="")
+
+        for i, key in enumerate(self.options):
+            x1 = self.PAD + i * self.PILL_W + self.GAP / 2
+            x2 = self.PAD + (i + 1) * self.PILL_W - self.GAP / 2
+            cx, cy = (x1 + x2) / 2, h / 2
             if key == self.active:
-                _round_rect(c, 1, 1, w - 1, h - 1, radius=10, fill=COLOR_PRIMARY, outline="")
-                c.create_text(w / 2, h / 2, text=TAB_LABEL[key], fill="white",
-                              font=(FONT, 11, "bold"))
+                _round_rect(self.canvas, x1, self.PAD, x2, h - self.PAD,
+                            radius=(self.PILL_H) / 2, fill=COLOR_PRIMARY, outline="")
+                self.canvas.create_text(cx, cy, text=TAB_LABEL[key], fill="white",
+                                         font=(FONT, 11, "bold"))
             else:
-                c.create_text(w / 2, h / 2, text=TAB_LABEL[key], fill=COLOR_MUTED,
-                              font=(FONT, 11))
+                self.canvas.create_text(cx, cy, text=TAB_LABEL[key], fill=COLOR_MUTED,
+                                         font=(FONT, 11))
 
 
 class StatCard:
     def __init__(self, parent, label, dot_color):
-        self.card = Card(parent, radius=12, pad=14)
+        self.card = Card(parent, radius=10, pad=10)
         row = tk.Frame(self.card.inner, bg=COLOR_CARD)
-        row.pack(fill="x")
-        dot = tk.Canvas(row, width=11, height=11, bg=COLOR_CARD, highlightthickness=0)
-        dot.create_oval(1, 1, 10, 10, fill=dot_color, outline="")
-        dot.pack(side="left", pady=(2, 0))
+        row.pack(fill="both", expand=True)
+        dot = tk.Canvas(row, width=8, height=8, bg=COLOR_CARD, highlightthickness=0)
+        dot.create_oval(1, 1, 7, 7, fill=dot_color, outline="")
+        dot.pack(side="left")
         tk.Label(row, text=label, bg=COLOR_CARD, fg=COLOR_MUTED,
-                 font=(FONT, 13, "bold")).pack(side="left", padx=(6, 0))
+                 font=(FONT, 10, "bold")).pack(side="left", padx=(5, 0))
 
-        self.value_label = tk.Label(self.card.inner, text="-", bg=COLOR_CARD, fg=COLOR_TEXT,
-                                     font=(FONT, 24, "bold"))
-        self.value_label.pack(anchor="w", pady=(4, 0))
+        self.value_label = tk.Label(row, text="-", bg=COLOR_CARD, fg=COLOR_TEXT,
+                                     font=(FONT, 15, "bold"))
+        self.value_label.pack(side="right")
 
     def widget(self):
         return self.card.widget()
@@ -192,7 +235,7 @@ class StatCard:
 class BerthMonitorApp:
     def __init__(self, root):
         self.root = root
-        root.title("터미널 선석 현황 모니터")
+        root.title("Real-time Berth Monitoring")
         root.geometry("1360x860")
         root.configure(bg=COLOR_BG)
 
@@ -216,6 +259,9 @@ class BerthMonitorApp:
     # ---------- 레이아웃 ----------
 
     def _build_header(self):
+        accent = tk.Frame(self.root, bg=COLOR_PRIMARY, height=3)
+        accent.pack(fill="x")
+
         header = tk.Frame(self.root, bg=COLOR_CARD, height=100)
         header.pack(fill="x")
         border = tk.Frame(self.root, bg=COLOR_BORDER, height=1)
@@ -225,14 +271,14 @@ class BerthMonitorApp:
         inner.pack(fill="both", expand=True, padx=28, pady=18)
 
         self.logo_img = tk.PhotoImage(data=LOGO_PNG_B64)
-        tk.Label(inner, image=self.logo_img, bg=COLOR_CARD).pack(side="left", padx=(0, 14))
+        tk.Label(inner, image=self.logo_img, bg=COLOR_CARD).pack(side="left", padx=(0, 16))
 
         left = tk.Frame(inner, bg=COLOR_CARD)
         left.pack(side="left")
-        tk.Label(left, text="선석 현황", bg=COLOR_CARD, fg=COLOR_TEXT,
-                 font=(FONT, 24, "bold")).pack(anchor="w")
+        tk.Label(left, text="Real-time Berth Monitoring", bg=COLOR_CARD, fg=COLOR_TEXT,
+                 font=(FONT, 25, "bold")).pack(anchor="w")
         tk.Label(left, text="부산항 · 인천항 · 광양항 실시간 선석 배정 현황  ·  선사코드 DYS",
-                 bg=COLOR_CARD, fg=COLOR_MUTED, font=(FONT, 11)).pack(anchor="w", pady=(4, 0))
+                 bg=COLOR_CARD, fg=COLOR_MUTED, font=(FONT, 11)).pack(anchor="w", pady=(5, 0))
 
         right = tk.Frame(inner, bg=COLOR_CARD)
         right.pack(side="right")
@@ -240,35 +286,31 @@ class BerthMonitorApp:
                                       font=(FONT, 10))
         self.status_label.pack(side="top", anchor="e")
 
-        btn_border = tk.Frame(right, bg=COLOR_PRIMARY)
-        btn_border.pack(side="top", anchor="e", pady=(8, 0))
-        btn = tk.Button(btn_border, text="새로고침", command=self.refresh, bd=0,
-                         relief="flat", bg=COLOR_CARD, fg=COLOR_PRIMARY,
-                         activebackground=COLOR_PRIMARY_SOFT, activeforeground=COLOR_PRIMARY,
-                         font=(FONT, 10, "bold"), padx=18, pady=7, cursor="hand2")
-        btn.pack(padx=1, pady=1)
+        btn = tk.Button(right, text="새로고침", command=self.refresh, bd=0,
+                         relief="flat", bg=COLOR_PRIMARY, fg="white",
+                         activebackground=COLOR_PRIMARY_DARK, activeforeground="white",
+                         font=(FONT, 10, "bold"), padx=20, pady=8, cursor="hand2")
+        btn.pack(side="top", anchor="e", pady=(10, 0))
 
     def _build_summary(self):
         self.stat_cards = {}
 
         region_keys = TAB_KEYS[1:]
-        port_specs = [(key, REGION_LABEL[key], REGION_COLOR[key]) for key in region_keys]
-        self._build_stat_row(port_specs, top_pad=14)
-
+        port_specs = [(key, TAB_LABEL[key], REGION_COLOR[key]) for key in region_keys]
         country_specs = [(key, key, COUNTRY_COLOR[key]) for key in COUNTRY_KEYS]
-        self._build_stat_row(country_specs, top_pad=0)
+        self._build_stat_row(port_specs + country_specs, top_pad=14)
 
     def _build_stat_row(self, specs, top_pad):
-        bar = tk.Frame(self.root, bg=COLOR_BG, height=74)
+        bar = tk.Frame(self.root, bg=COLOR_BG, height=58)
         bar.pack(fill="x", padx=28, pady=(top_pad, 8))
-        bar.pack_propagate(False)
+        bar.grid_propagate(False)
         for col in range(len(specs)):
             bar.grid_columnconfigure(col, weight=1, uniform="stat")
         bar.grid_rowconfigure(0, weight=1)
 
         for i, (key, label, color) in enumerate(specs):
             sc = StatCard(bar, label, color)
-            sc.widget().grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 14, 0))
+            sc.widget().grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 10, 0))
             self.stat_cards[key] = sc
 
     def _build_content(self):
@@ -533,7 +575,6 @@ class BerthMonitorApp:
             yticklabels = []
             for i, d in enumerate(rows):
                 pct = d.get("progress", 0)
-                is_dys = (d.get("line") or "").upper() == "DYS"
                 color = _progress_color(pct)
                 ax.barh(i, pct, height=0.55, color=color, edgecolor=COLOR_CARD,
                         linewidth=1.2, zorder=2)
@@ -553,8 +594,7 @@ class BerthMonitorApp:
                 ax.text(103, i, f"{pct}%", va="center", ha="left",
                         fontsize=11, color=COLOR_TEXT, fontweight="bold", zorder=3)
 
-                prefix = "★ " if is_dys else ""  # DYS 선박 강조
-                yticklabels.append(f"{prefix}{d['terminal']} {d['berth']}선석")
+                yticklabels.append(f"{d['terminal']} {d['berth']}선석")
 
             ax.set_yticks(range(len(rows)))
             ax.set_yticklabels(yticklabels, fontsize=12, color=COLOR_TEXT, fontweight="bold")

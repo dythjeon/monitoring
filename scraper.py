@@ -32,11 +32,31 @@ def _parse_dt(s):
     return None
 
 
-def fetch_bptc(time_range="week", line_code="DYS"):
+# 선사코드가 DYS로 안 찍혀도 실제로는 DYS 소속/파트너 선박이라 항상 추적해야 하는 선명.
+# 필요할 때마다 이 목록에 이름만 추가하면 전체 터미널에 공통 적용된다.
+EXTRA_SHIP_NAMES = ("SM TOKYO",)
+
+
+def _is_tracked(line, ship_name, extra_codes=()):
+    """선사코드가 DYS이거나, 그 터미널에서 DYS와 동일하게 취급하는 컨소시엄/파트너
+    항로 코드(extra_codes)이거나, EXTRA_SHIP_NAMES에 있는 선명이면 추적 대상으로 본다."""
+    line = (line or "").strip().upper()
+    if line == "DYS" or line in extra_codes:
+        return True
+    ship_name = (ship_name or "").lower()
+    return any(name.lower() in ship_name for name in EXTRA_SHIP_NAMES)
+
+
+BPTC_EXTRA_CODES = ("KHP", "NKX")
+
+
+def fetch_bptc(time_range="week"):
     """BPTC(부산항터미널, 신선대/감만) 선석배정 현황(T)을 가져온다.
 
     time_range: '3days' | 'week' | 'month'
-    line_code: 선사코드 (예: 'DYS'). 빈 문자열/None이면 전체 선사.
+    이 페이지는 선사코드 필드에 DYS 대신 컨소시엄/파트너 코드(KHP, NKX)가
+    찍히는 경우가 있어, 서버 필터 없이 전체 선사를 받아 _is_tracked()로
+    클라이언트에서 걸러낸다.
     반환: [{terminal, berth, voyage, ship_name, line, eta, etd}, ...]
     """
     url = "https://info.bptc.co.kr/Berth_status_text_servlet_sw_kr"
@@ -46,7 +66,7 @@ def fetch_bptc(time_range="week", line_code="DYS"):
         "ROCD": "ALL",
         "ORDER": "item1",
         "v_gu": "A",
-        "v_oper_cd": line_code or "",
+        "v_oper_cd": "",
     }
     headers = dict(HEADERS)
     headers["Referer"] = referer
@@ -66,6 +86,8 @@ def fetch_bptc(time_range="week", line_code="DYS"):
         if len(cells) < 10:
             continue
         terminal, berth, voyage, ship_name, _side, line, eta_plan, eta, _work_done, etd = cells[:10]
+        if not _is_tracked(line, ship_name, extra_codes=BPTC_EXTRA_CODES):
+            continue
         rows.append({
             "source": "BPTC",
             "region": "부산",
@@ -86,7 +108,7 @@ def fetch_bptc_work_status():
 
     info.bptc.co.kr 메인 페이지 자체에 선석별 현재 작업중인 선박과
     진행률(%)이 서버 렌더링되어 있어, 별도 조회 없이 그대로 파싱한다.
-    특정 선사로 필터하지 않고 전체 작업현황을 반환한다(전체 혼잡도 파악용).
+    fetch_bptc()와 동일하게 _is_tracked()로 걸러낸다.
     반환: [{terminal, berth, voyage, ship_name, line, eta, etd, progress,
             discharge, load}, ...]
     """
@@ -124,6 +146,9 @@ def fetch_bptc_work_status():
             discharge = counts[0].get_text(strip=True) if len(counts) > 0 else ""
             load = counts[1].get_text(strip=True) if len(counts) > 1 else ""
 
+            if not _is_tracked(line, ship_name, extra_codes=BPTC_EXTRA_CODES):
+                continue
+
             rows.append({
                 "terminal": terminal,
                 "berth": berth,
@@ -139,12 +164,17 @@ def fetch_bptc_work_status():
     return rows
 
 
-def fetch_hjit(period_days=14, line_code="DYS", base_date=None):
+HJIT_EXTRA_CODES = ("IQH", "IHP")
+
+
+def fetch_hjit(period_days=14, base_date=None):
     """HJIT(한진인천컨테이너터미널) 선석현황을 가져온다.
 
     period_days: 조회 기간(일)
-    line_code: 선사코드 (예: 'DYS'). 빈 문자열/None이면 전체 선사.
     base_date: 'YYYY-MM-DD' 기준일. None이면 오늘 날짜 사용.
+    이 페이지도 선사코드 필드에 DYS 대신 컨소시엄/파트너 코드(IQH, IHP)가
+    찍히는 경우가 있어, 서버 필터 없이 전체 선사를 받아 _is_tracked()로
+    클라이언트에서 걸러낸다.
     반환: [{terminal, berth, voyage, ship_name, line, eta, etd}, ...]
     """
     base = "http://59.17.254.10:9130/esvc"
@@ -169,7 +199,7 @@ def fetch_hjit(period_days=14, line_code="DYS", base_date=None):
         "theCode": "",
         "theSeq": "",
         "theYear": "",
-        "thePtnr": line_code or "",
+        "thePtnr": "",
         "theLane": "",
     }
     resp = session.post(post_url, data=body, headers={"Referer": get_url}, timeout=15)
@@ -185,6 +215,8 @@ def fetch_hjit(period_days=14, line_code="DYS", base_date=None):
         cells = [td.get_text(strip=True) for td in tds]
         voyage, ship_name, line, _in_voy, _out_voy, _cct, etb_atb, etd_atd, _dis, _load, _tp, berth = cells[:12]
         berth = berth.split("(")[0].strip()
+        if not _is_tracked(line, ship_name, extra_codes=HJIT_EXTRA_CODES):
+            continue
         rows.append({
             "source": "HJIT",
             "region": "인천",
@@ -200,15 +232,14 @@ def fetch_hjit(period_days=14, line_code="DYS", base_date=None):
     return rows
 
 
-def fetch_gwct(time_range="week", line_code="DYS"):
+def fetch_gwct(time_range="week"):
     """GWCT(광양항서부컨테이너터미널) 선석배정 목록을 가져온다.
 
     time_range: '3days' | 'week' | 'month'
-    line_code: 선사코드 (예: 'DYS'). 빈 문자열/None이면 전체 선사.
     반환: [{terminal, berth, voyage, ship_name, line, eta, etd}, ...]
 
     이 사이트는 선사코드로 서버측 필터링을 지원하지 않아(폼에 필드 없음)
-    전체 목록을 받아온 뒤 클라이언트에서 line_code로 걸러낸다.
+    전체 목록을 받아온 뒤 클라이언트에서 _is_tracked()로 걸러낸다.
     """
     base = "http://www.gwct.co.kr"
     page_url = f"{base}/sub/sub_B2"
@@ -248,7 +279,7 @@ def fetch_gwct(time_range="week", line_code="DYS"):
             continue
         _no, berth, voyage, ship_name, _line_voyage, _side, line, eta, etd = cells[:9]
         route = cells[16] if len(cells) > 16 else ""
-        if line_code and line != line_code:
+        if not _is_tracked(line, ship_name):
             continue
         rows.append({
             "source": "GWCT",
@@ -296,10 +327,10 @@ def fetch_snct(line_code="KHP"):
                     fields[tds[0].get_text(strip=True)] = tds[1].get_text(strip=True)
 
             route = fields.get("Route", "")
-            if line_code and route != line_code:
+            ship_name = fields.get("Name of Vessel", "")
+            if not (route == line_code or _is_tracked(route, ship_name)):
                 continue
 
-            ship_name = fields.get("Name of Vessel", "")
             voyage = fields.get("In / Out Voyage", "")
             berth = fields.get("Berth No / (P/S)", "").split("/")[0].strip()
             eta = _parse_dt(fields.get("Estimated Time of Berth", ""))
@@ -325,7 +356,7 @@ def fetch_snct(line_code="KHP"):
     return rows
 
 
-def fetch_e1ct(line_code="DYS"):
+def fetch_e1ct():
     """E1CT(인천 E1컨테이너터미널) 선석배정현황(T)을 가져온다.
 
     날짜를 지정하지 않으면 오늘부터 7일치를 그대로 보여주는 페이지라
@@ -357,7 +388,8 @@ def fetch_e1ct(line_code="DYS"):
             continue
 
         line = cells[8][0] if cells[8] else ""
-        if line_code and line != line_code:
+        ship_name = cells[4][0] if cells[4] else ""
+        if not _is_tracked(line, ship_name):
             continue
 
         rows.append({
@@ -366,7 +398,7 @@ def fetch_e1ct(line_code="DYS"):
             "terminal": "E1CT",
             "berth": cells[1][0].split("(")[0].strip() if cells[1] else "",
             "voyage": " ".join(cells[2]) if cells[2] else "",
-            "ship_name": cells[4][0] if cells[4] else "",
+            "ship_name": ship_name,
             "line": line,
             "route": "",  # E1CT 선석배정현황(T) 페이지에는 항로 코드가 없음
             "eta": _parse_dt(cells[5][0].strip("()")) if cells[5] else None,
@@ -386,11 +418,9 @@ def _find_hpnt_table(soup):
     return None
 
 
-def fetch_hpnt(line_code="DYS", extra_ship_names=("SM TOKYO",)):
+def fetch_hpnt():
     """HPNT(부산항 허치슨터미널) 선석배정현황을 가져온다.
 
-    line_code: 선사코드. 빈 문자열/None이면 필터하지 않음.
-    extra_ship_names: 선사코드와 무관하게 항상 포함시킬 선명(부분일치, 대소문자 무시).
     반환: [{terminal, berth, voyage, ship_name, line, eta, etd}, ...]
 
     결과가 페이지당 20건씩 나뉘어(currentPage) 있어, 첫 페이지에서
@@ -434,10 +464,7 @@ def fetch_hpnt(line_code="DYS", extra_ship_names=("SM TOKYO",)):
             (voyage_code, inout_voy, berth, _bitt, eta, _work, etd, _closing,
              _side, _qty, _qc, ship_name, line, route) = cells[:14]
 
-            is_line_match = bool(line_code) and line == line_code
-            is_extra_ship = extra_ship_names and any(
-                name.lower() in ship_name.lower() for name in extra_ship_names)
-            if not (is_line_match or is_extra_ship):
+            if not _is_tracked(line, ship_name):
                 continue
 
             rows.append({
