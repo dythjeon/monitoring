@@ -296,6 +296,62 @@ def fetch_gwct(time_range="week"):
     return rows
 
 
+def fetch_gwct_empty_status(carrier_code="DYS"):
+    """GWCT(광양항서부컨테이너터미널) On-Dock 선사별 컨테이너 SUMMARY에서
+    DEPOT(장치장 보관) 칸의 GP(일반) 행만 뽑아온다.
+
+    이 페이지는 선사코드로 서버측 필터링을 지원한다(ptnrCd). CSRF 토큰은
+    <meta name="_csrf">에 있고, common.js가 모든 AJAX 요청에 X-CSRF-TOKEN
+    헤더로 자동 첨부하는 걸 그대로 흉내낸다.
+    표 헤더는 구분(행: GP/RF/OT/PL/TK/계) x [IMPORT/EXPORT/T·S/DEPOT](각
+    20G/40G/40H x 2) 구조라, DEPOT 블록(뒤에서 3번째 6칸)만 골라
+    20G/40G/40H 두 칸(예: S/D)을 더해 합계를 낸다.
+    fetch_bptc_empty_status()와 같은 모양({carrier, terminal, counts, total})
+    으로 반환해 공컨현황 표에 그대로 이어붙일 수 있게 한다.
+    """
+    base = "http://www.gwct.co.kr"
+    page_url = f"{base}/sub/sub_F1"
+    search_url = f"{base}/sub/sub_F1/search"
+
+    session = requests.Session()
+    session.headers.update(HEADERS)
+
+    page_resp = session.get(page_url, timeout=15)
+    page_resp.raise_for_status()
+    csrf = re.search(r'name="_csrf" content="([^"]+)"', page_resp.text)
+    if not csrf:
+        return []
+    csrf = csrf.group(1)
+
+    resp = session.post(search_url, data={"ptnrCd": carrier_code},
+                         headers={"X-CSRF-TOKEN": csrf, "X-Requested-With": "XMLHttpRequest"},
+                         timeout=15)
+    resp.raise_for_status()
+    resp.encoding = resp.apparent_encoding or "utf-8"
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    for tr in soup.find_all("tr"):
+        tds = tr.find_all("td")
+        if not tds or tds[0].get_text(strip=True) != "GP":
+            continue
+        cells = [td.get_text(strip=True) for td in tds]
+        if len(cells) < 27:
+            continue
+        depot = [int(c) if c.isdigit() else 0 for c in cells[19:25]]  # 20G-S,D 40G-S,D 40H-S,D
+        counts = {
+            "GP20": depot[0] + depot[1],
+            "GP40": depot[2] + depot[3],
+            "HQ40": depot[4] + depot[5],
+        }
+        return [{
+            "carrier": carrier_code.upper(),
+            "terminal": "광양서부",
+            "counts": counts,
+            "total": sum(counts.values()),
+        }]
+    return []
+
+
 def fetch_snct(line_code="KHP"):
     """SNCT(선광신컨테이너터미널) 선석배정현황(그래픽)을 가져온다.
 
