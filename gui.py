@@ -1,6 +1,7 @@
 import re
 import threading
 import tkinter as tk
+import tkinter.font as tkfont
 from datetime import datetime, timedelta
 
 import matplotlib
@@ -171,31 +172,49 @@ class Card:
 
 class Segmented(tk.Frame):
     """rounded pill 스타일 탭 선택기. 트랙 전체를 하나의 캔버스로 그려
-    둥근 알약 모양 컨테이너 느낌을 낸다."""
+    둥근 알약 모양 컨테이너 느낌을 낸다. "전체"처럼 짧은 라벨과
+    "국내공컨현황"처럼 긴 라벨이 섞여 있어, 고정폭 대신 각 pill을
+    텍스트 실측 너비에 맞춰 그린다(안 그러면 긴 라벨끼리 좁은 pill 안에서
+    겹쳐 보인다)."""
 
-    PILL_W = 106
     PILL_H = 38
     PAD = 5
-    GAP = 3
+    GAP = 8
+    TEXT_PAD_X = 18
+    MIN_PILL_W = 76
 
     def __init__(self, master, options, command):
         super().__init__(master, bg=COLOR_BG)
         self.command = command
         self.options = options
         self.active = options[0]
+        self._font_active = tkfont.Font(family=FONT, size=11, weight="bold")
+        self._font_idle = tkfont.Font(family=FONT, size=11)
+        self._pill_bounds = []  # [(x1, x2), ...], _render()가 채운다
 
-        w = self.PAD * 2 + self.PILL_W * len(options)
-        h = self.PAD * 2 + self.PILL_H
+        w, h = self._measure()
         self.canvas = tk.Canvas(self, width=w, height=h, bg=COLOR_BG,
                                  highlightthickness=0, bd=0)
         self.canvas.pack()
         self.canvas.bind("<Button-1>", self._on_click)
         self._render()
 
+    def _pill_width(self, key):
+        text_w = max(self._font_active.measure(TAB_LABEL[key]),
+                     self._font_idle.measure(TAB_LABEL[key]))
+        return max(self.MIN_PILL_W, text_w + self.TEXT_PAD_X * 2)
+
+    def _measure(self):
+        widths = [self._pill_width(key) for key in self.options]
+        w = self.PAD * 2 + sum(widths) + self.GAP * (len(self.options) - 1)
+        h = self.PAD * 2 + self.PILL_H
+        return w, h
+
     def _on_click(self, event):
-        idx = int((event.x - self.PAD) // self.PILL_W)
-        if 0 <= idx < len(self.options) and event.y >= self.PAD:
-            self.select(self.options[idx])
+        for key, (x1, x2) in zip(self.options, self._pill_bounds):
+            if x1 <= event.x <= x2 and self.PAD <= event.y <= self.PAD + self.PILL_H:
+                self.select(key)
+                return
 
     def select(self, key):
         if key == self.active:
@@ -206,22 +225,26 @@ class Segmented(tk.Frame):
 
     def _render(self):
         self.canvas.delete("all")
-        w = self.PAD * 2 + self.PILL_W * len(self.options)
-        h = self.PAD * 2 + self.PILL_H
+        w, h = self._measure()
+        self.canvas.config(width=w, height=h)
         _round_rect(self.canvas, 0, 0, w, h, radius=h / 2, fill=COLOR_TRACK, outline="")
 
-        for i, key in enumerate(self.options):
-            x1 = self.PAD + i * self.PILL_W + self.GAP / 2
-            x2 = self.PAD + (i + 1) * self.PILL_W - self.GAP / 2
+        self._pill_bounds = []
+        x = self.PAD
+        for key in self.options:
+            pill_w = self._pill_width(key)
+            x1, x2 = x, x + pill_w
             cx, cy = (x1 + x2) / 2, h / 2
             if key == self.active:
                 _round_rect(self.canvas, x1, self.PAD, x2, h - self.PAD,
-                            radius=(self.PILL_H) / 2, fill=COLOR_PRIMARY, outline="")
+                            radius=self.PILL_H / 2, fill=COLOR_PRIMARY, outline="")
                 self.canvas.create_text(cx, cy, text=TAB_LABEL[key], fill="white",
-                                         font=(FONT, 11, "bold"))
+                                         font=self._font_active)
             else:
                 self.canvas.create_text(cx, cy, text=TAB_LABEL[key], fill=COLOR_MUTED,
-                                         font=(FONT, 11))
+                                         font=self._font_idle)
+            self._pill_bounds.append((x1, x2))
+            x = x2 + self.GAP
 
 
 class Spinner(tk.Canvas):
@@ -282,7 +305,7 @@ class StatCard:
 class BerthMonitorApp:
     def __init__(self, root):
         self.root = root
-        root.title("Real-time Berth Monitoring")
+        root.title("Real-time Berth/Empty stock Monitoring")
         root.geometry("1360x860")
         root.configure(bg=COLOR_BG)
 
@@ -322,7 +345,7 @@ class BerthMonitorApp:
 
         left = tk.Frame(inner, bg=COLOR_CARD)
         left.pack(side="left")
-        tk.Label(left, text="Real-time Berth Monitoring", bg=COLOR_CARD, fg=COLOR_TEXT,
+        tk.Label(left, text="Real-time Berth/Empty stock Monitoring", bg=COLOR_CARD, fg=COLOR_TEXT,
                  font=(FONT, 25, "bold")).pack(anchor="w")
         tk.Label(left, text="부산항 · 인천항 · 광양항 실시간 선석 배정 현황  ·  선사코드 DYS",
                  bg=COLOR_CARD, fg=COLOR_MUTED, font=(FONT, 11)).pack(anchor="w", pady=(5, 0))
