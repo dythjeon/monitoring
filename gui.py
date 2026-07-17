@@ -60,17 +60,19 @@ TAB_LABEL = {"전체": "전체", "부산": "부산항", "인천": "인천항", "
 
 TAB_KEYS = ["전체", "부산", "인천", "광양"]
 ALL_TAB_KEYS = TAB_KEYS + [WORK_TAB_KEY, EMPTY_TAB_KEY]
-EMPTY_CARRIER_COLOR = {"DYS": COLOR_PRIMARY, "NSS": "#12b886"}
-# 공컨현황 표의 컬럼 구성: (scraper의 counts 키, 표에 보여줄 라벨).
-# BPTC 원본 페이지의 4개 그룹(GP/DC, OT/UT, FL/PL/FC/FR, HQ/HC)을
-# 업계에서 흔히 쓰는 DC/OT/FR/HC 표기로 줄여서 보여준다.
-# 주의: 이 페이지엔 냉동컨테이너(RF/Reefer) 데이터가 없어 HC(High Cube)로 대체했다.
-EMPTY_TABLE_COLS = [
-    ("GP20", "DC 20'"), ("GP40", "DC 40'"),
-    ("OT20", "OT 20'"), ("OT40", "OT 40'"),
-    ("FL20", "FR 20'"), ("FL40", "FR 40'"),
-    ("HQ20", "HC 20'"), ("HQ40", "HC 40'"), ("HQ45", "HC 45'"),
+EMPTY_CARRIER_COLOR = {"DYS": COLOR_PRIMARY}
+# 공컨현황 표의 컬럼 구성: (그룹명, [(scraper counts 키, 하위 라벨), ...]).
+# 2단 헤더로 그려진다: 1행엔 그룹명(DC/OT/FR)이 colspan으로, 2행엔 하위
+# 사이즈 라벨이 온다. DC 그룹의 "4H"는 40'HC(HQ40)를 뜻한다 — 하이큐브는
+# 드라이밴의 변형이라 관행상 DC 라인에 같이 묶어서 본다. HQ20/HQ45,
+# 냉동컨테이너(RF)는 이 페이지에 데이터가 없거나(RF) 사용자가 표에서
+# 뺀 항목이라 표시하지 않는다.
+EMPTY_TABLE_GROUPS = [
+    ("DC", [("GP20", "20'"), ("GP40", "40'"), ("HQ40", "4H")]),
+    ("OT", [("OT20", "20'"), ("OT40", "40'")]),
+    ("FR", [("FL20", "20'"), ("FL40", "40'")]),
 ]
+EMPTY_TABLE_COLS = [col for _, cols in EMPTY_TABLE_GROUPS for col in cols]
 FONT = "맑은 고딕"
 _WEEKDAY_KR = ["월", "화", "수", "목", "금", "토", "일"]
 
@@ -222,6 +224,39 @@ class Segmented(tk.Frame):
                                          font=(FONT, 11))
 
 
+class Spinner(tk.Canvas):
+    """새로고침 중임을 보여주는 회전하는 원호. idle일 때는 숨겨둔다."""
+
+    SIZE = 16
+
+    def __init__(self, parent):
+        super().__init__(parent, width=self.SIZE, height=self.SIZE,
+                          bg=COLOR_CARD, highlightthickness=0)
+        self.angle = 0
+        self._running = False
+        self._arc = self.create_arc(2, 2, self.SIZE - 2, self.SIZE - 2, start=0, extent=110,
+                                     style="arc", outline=COLOR_PRIMARY, width=2)
+        self.itemconfigure(self._arc, state="hidden")
+
+    def start(self):
+        if self._running:
+            return
+        self._running = True
+        self.itemconfigure(self._arc, state="normal")
+        self._animate()
+
+    def stop(self):
+        self._running = False
+        self.itemconfigure(self._arc, state="hidden")
+
+    def _animate(self):
+        if not self._running:
+            return
+        self.angle = (self.angle - 12) % 360
+        self.itemconfig(self._arc, start=self.angle)
+        self.after(45, self._animate)
+
+
 class StatCard:
     def __init__(self, parent, label, dot_color):
         self.card = Card(parent, radius=10, pad=10)
@@ -294,9 +329,13 @@ class BerthMonitorApp:
 
         right = tk.Frame(inner, bg=COLOR_CARD)
         right.pack(side="right")
-        self.status_label = tk.Label(right, text="불러오는 중...", bg=COLOR_CARD, fg=COLOR_MUTED,
+        status_row = tk.Frame(right, bg=COLOR_CARD)
+        status_row.pack(side="top", anchor="e")
+        self.spinner = Spinner(status_row)
+        self.spinner.pack(side="left", padx=(0, 6))
+        self.status_label = tk.Label(status_row, text="불러오는 중...", bg=COLOR_CARD, fg=COLOR_MUTED,
                                       font=(FONT, 10))
-        self.status_label.pack(side="top", anchor="e")
+        self.status_label.pack(side="left")
 
         btn = tk.Button(right, text="새로고침", command=self.refresh, bd=0,
                          relief="flat", bg=COLOR_PRIMARY, fg="white",
@@ -433,6 +472,7 @@ class BerthMonitorApp:
 
     def refresh(self):
         self.status_label.config(text="불러오는 중...")
+        self.spinner.start()
         threading.Thread(target=self._fetch_and_draw, daemon=True).start()
 
     def _fetch_and_draw(self):
@@ -453,6 +493,7 @@ class BerthMonitorApp:
         self.root.after(0, lambda: self._on_data(data, errors, work_data, empty_data))
 
     def _on_data(self, data, errors, work_data, empty_data):
+        self.spinner.stop()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         msg = f"마지막 갱신 {now}"
         if errors:
@@ -660,24 +701,37 @@ class BerthMonitorApp:
                 for carrier in EMPTY_CARRIER_COLOR
                 for terminal in ("신선대", "감만")]
 
-        headers = ["구분"] + [label for _, label in EMPTY_TABLE_COLS] + ["합계"]
-        ncols = len(headers)
+        ncols = 1 + len(EMPTY_TABLE_COLS) + 1  # 구분 + 하위 컬럼들 + 합계
+        total_col = ncols - 1
         parent.grid_columnconfigure(0, weight=2, uniform="empty_col")
         for c in range(1, ncols):
             parent.grid_columnconfigure(c, weight=1, uniform="empty_col")
 
-        for c, text in enumerate(headers):
-            tk.Label(parent, text=text, bg=COLOR_CARD, fg=COLOR_MUTED,
-                     font=(FONT, 11, "bold")).grid(row=0, column=c, sticky="nsew", pady=(4, 12))
+        # 1행: 구분/합계는 두 헤더 행을 세로로 합쳐서(rowspan) 쓰고,
+        # DC/OT/FR은 하위 사이즈 칸 개수만큼 가로로 합쳐(columnspan) 그린다.
+        tk.Label(parent, text="구분", bg=COLOR_CARD, fg=COLOR_MUTED,
+                 font=(FONT, 11, "bold")).grid(row=0, column=0, rowspan=2, sticky="nsew", pady=(4, 12))
+        tk.Label(parent, text="합계", bg=COLOR_CARD, fg=COLOR_MUTED,
+                 font=(FONT, 11, "bold")).grid(row=0, column=total_col, rowspan=2, sticky="nsew", pady=(4, 12))
+
+        c = 1
+        for group_label, cols in EMPTY_TABLE_GROUPS:
+            tk.Label(parent, text=group_label, bg=COLOR_CARD, fg=COLOR_TEXT,
+                     font=(FONT, 11, "bold")).grid(row=0, column=c, columnspan=len(cols), sticky="nsew", pady=(4, 2))
+            for _key, sub_label in cols:
+                tk.Label(parent, text=sub_label, bg=COLOR_CARD, fg=COLOR_MUTED,
+                         font=(FONT, 10)).grid(row=1, column=c, sticky="nsew", pady=(0, 12))
+                c += 1
+
         tk.Frame(parent, bg=COLOR_BORDER, height=1).grid(
-            row=1, column=0, columnspan=ncols, sticky="ew")
+            row=2, column=0, columnspan=ncols, sticky="ew")
 
         for r, (carrier, terminal) in enumerate(rows):
             d = by_key.get((carrier, terminal))
             counts = d["counts"] if d else {}
             total = d["total"] if d else 0
             bg = COLOR_CARD if r % 2 == 0 else COLOR_ROW_ALT
-            grid_row = r + 2
+            grid_row = r + 3
 
             label_cell = tk.Frame(parent, bg=bg)
             label_cell.grid(row=grid_row, column=0, sticky="nsew")
@@ -694,7 +748,7 @@ class BerthMonitorApp:
                          font=(FONT, 11)).grid(row=grid_row, column=c, sticky="nsew", pady=13)
 
             tk.Label(parent, text=str(total), bg=bg, fg=COLOR_TEXT,
-                     font=(FONT, 12, "bold")).grid(row=grid_row, column=ncols - 1, sticky="nsew", pady=13)
+                     font=(FONT, 12, "bold")).grid(row=grid_row, column=total_col, sticky="nsew", pady=13)
 
 
 def main():

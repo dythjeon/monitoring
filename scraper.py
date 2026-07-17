@@ -482,7 +482,7 @@ def fetch_hpnt():
     return rows
 
 
-BPTC_EMPTY_CARRIER_CODES = ("DYS", "NSS")
+BPTC_EMPTY_CARRIER_CODES = ("DYS",)
 BPTC_EMPTY_COL_LABELS = ["GP20", "GP40", "OT20", "OT40", "FL20", "FL40", "HQ20", "HQ40", "HQ45"]
 
 
