@@ -463,6 +463,41 @@ def fetch_e1ct():
     return rows
 
 
+def fetch_e1ct_empty_status(carrier_code="DYS"):
+    """E1CT(인천 E1컨테이너터미널) 공컨테이너 반출 가능 수량 페이지에서
+    선사코드에 해당하는 행만 뽑아온다.
+
+    이 페이지는 파라미터 없이 GET하면 전체 선사 목록이 완성된 표로
+    내려온다(서버측 필터 없음). 컬럼은 20GP/40GP/40HQ/45GP/합계인데,
+    45GP는 실제로 쓰이지 않는 항목이라(늘 0) 가져오지 않는다.
+    fetch_bptc_empty_status()와 같은 모양으로 반환해 공컨현황 표에
+    그대로 이어붙일 수 있게 한다.
+    """
+    url = "http://www.e1ct.co.kr/info/terminal/emptyContainer"
+    resp = requests.get(url, headers=HEADERS, timeout=15)
+    resp.raise_for_status()
+    resp.encoding = resp.apparent_encoding or "utf-8"
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    table = soup.select_one("div.tb_tmnl table")
+    if table is None or table.find("tbody") is None:
+        return []
+
+    for tr in table.find("tbody").find_all("tr"):
+        cells = [td.get_text(strip=True) for td in tr.find_all("td")]
+        if len(cells) < 5 or cells[0].strip().upper() != carrier_code.upper():
+            continue
+        gp20, gp40, hq40 = (int(c) if c.isdigit() else 0 for c in cells[1:4])
+        counts = {"GP20": gp20, "GP40": gp40, "HQ40": hq40}
+        return [{
+            "carrier": carrier_code.upper(),
+            "terminal": "E1CT",
+            "counts": counts,
+            "total": sum(counts.values()),
+        }]
+    return []
+
+
 def _find_hpnt_table(soup):
     """결과 표를 찾는다. 페이지가 표를 여러 겹으로 감싸고 있어(레이아웃용
     바깥 표들도 안쪽 표의 텍스트를 그대로 포함), '선명' 헤더 셀을 정확히

@@ -10,7 +10,8 @@ import matplotlib.ticker as mticker
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-from scraper import fetch_all, fetch_bptc_work_status, fetch_bptc_empty_status, fetch_gwct_empty_status
+from scraper import (fetch_all, fetch_bptc_work_status, fetch_bptc_empty_status,
+                     fetch_gwct_empty_status, fetch_e1ct_empty_status)
 from assets import LOGO_PNG_B64
 
 matplotlib.rcParams["font.family"] = "Malgun Gothic"
@@ -494,6 +495,10 @@ class BerthMonitorApp:
             empty_data = empty_data + fetch_gwct_empty_status()
         except Exception as e:
             errors = list(errors) + [f"공컨테이너현황(광양서부): {e}"]
+        try:
+            empty_data = empty_data + fetch_e1ct_empty_status()
+        except Exception as e:
+            errors = list(errors) + [f"공컨테이너현황(E1CT): {e}"]
         self.root.after(0, lambda: self._on_data(data, errors, work_data, empty_data))
 
     def _on_data(self, data, errors, work_data, empty_data):
@@ -703,7 +708,7 @@ class BerthMonitorApp:
         by_key = {(d["carrier"], d["terminal"]): d for d in data}
         rows = [(carrier, terminal)
                 for carrier in EMPTY_CARRIER_COLOR
-                for terminal in ("신선대", "감만", "광양서부")]
+                for terminal in ("신선대", "감만", "광양서부", "E1CT")]
 
         ncols = 1 + len(EMPTY_TABLE_COLS) + 1  # 구분 + 하위 컬럼들 + 합계
         total_col = ncols - 1
