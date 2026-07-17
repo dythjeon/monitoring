@@ -437,10 +437,19 @@ class BerthMonitorApp:
             msg += "  ·  오류: " + "; ".join(errors)
         self.status_label.config(text=msg)
 
-        for region in TAB_KEYS[1:]:
-            self.stat_cards[region].set_value(sum(1 for d in data if d.get("region") == region))
+        # 통계 카드는 간트 차트와 같은 "지금 ~ 지금+7일" 창으로 집계해야
+        # 숫자가 일치한다. 소스마다 조회 기간이 제각각이라(HJIT 14일치,
+        # SNCT 2주치 등) 필터 없이 data를 그대로 세면 차트에는 안 그려지는
+        # 항목까지 카드 숫자에 섞여 들어가 서로 어긋나 보인다.
+        win_start = datetime.now().replace(minute=0, second=0, microsecond=0)
+        win_end = win_start + timedelta(days=GANTT_WINDOW_DAYS)
+        visible = [d for d in data if d.get("eta") and d.get("etd")
+                   and d["etd"] >= win_start and d["eta"] <= win_end]
 
-        countries = [_classify_country(d) for d in data]
+        for region in TAB_KEYS[1:]:
+            self.stat_cards[region].set_value(sum(1 for d in visible if d.get("region") == region))
+
+        countries = [_classify_country(d) for d in visible]
         for key in COUNTRY_KEYS:
             self.stat_cards[key].set_value(countries.count(key))
 
