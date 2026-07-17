@@ -57,12 +57,12 @@ WORK_TAB_KEY = "작업현황"
 EMPTY_TAB_KEY = "공컨현황"
 # 탭 pill은 폭이 좁아 항구 이름만 짧게 표기한다 (소스 목록은 통계 카드에서 보여준다).
 TAB_LABEL = {"전체": "전체", "부산": "부산항", "인천": "인천항", "광양": "광양항",
-             WORK_TAB_KEY: "본선작업현황", EMPTY_TAB_KEY: "공컨현황"}
+             WORK_TAB_KEY: "본선작업현황", EMPTY_TAB_KEY: "국내공컨현황"}
 
 TAB_KEYS = ["전체", "부산", "인천", "광양"]
 ALL_TAB_KEYS = TAB_KEYS + [WORK_TAB_KEY, EMPTY_TAB_KEY]
 EMPTY_CARRIER_COLOR = {"DYS": COLOR_PRIMARY}
-# 공컨현황 표의 컬럼 구성: (그룹명, [(scraper counts 키, 하위 라벨), ...]).
+# 국내공컨현황 표의 컬럼 구성: (그룹명, [(scraper counts 키, 하위 라벨), ...]).
 # 2단 헤더로 그려진다: 1행엔 그룹명(DC/OT/FR)이 colspan으로, 2행엔 하위
 # 사이즈 라벨이 온다. DC 그룹의 "4H"는 40'HC(HQ40)를 뜻한다 — 하이큐브는
 # 드라이밴의 변형이라 관행상 DC 라인에 같이 묶어서 본다. HQ20/HQ45,
@@ -73,7 +73,6 @@ EMPTY_TABLE_GROUPS = [
     ("OT", [("OT20", "20'"), ("OT40", "40'")]),
     ("FR", [("FL20", "20'"), ("FL40", "40'")]),
 ]
-EMPTY_TABLE_COLS = [col for _, cols in EMPTY_TABLE_GROUPS for col in cols]
 FONT = "맑은 고딕"
 _WEEKDAY_KR = ["월", "화", "수", "목", "금", "토", "일"]
 
@@ -490,19 +489,19 @@ class BerthMonitorApp:
             empty_data = fetch_bptc_empty_status()
         except Exception as e:
             empty_data = []
-            errors = list(errors) + [f"공컨테이너현황: {e}"]
+            errors = list(errors) + [f"국내공컨현황: {e}"]
         try:
             empty_data = empty_data + fetch_gwct_empty_status()
         except Exception as e:
-            errors = list(errors) + [f"공컨테이너현황(광양서부): {e}"]
+            errors = list(errors) + [f"국내공컨현황(광양서부): {e}"]
         try:
             empty_data = empty_data + fetch_e1ct_empty_status()
         except Exception as e:
-            errors = list(errors) + [f"공컨테이너현황(E1CT): {e}"]
+            errors = list(errors) + [f"국내공컨현황(E1CT): {e}"]
         try:
             empty_data = empty_data + fetch_hjit_empty_status()
         except Exception as e:
-            errors = list(errors) + [f"공컨테이너현황(HJIT): {e}"]
+            errors = list(errors) + [f"국내공컨현황(HJIT): {e}"]
         self.root.after(0, lambda: self._on_data(data, errors, work_data, empty_data))
 
     def _on_data(self, data, errors, work_data, empty_data):
@@ -714,29 +713,53 @@ class BerthMonitorApp:
                 for carrier in EMPTY_CARRIER_COLOR
                 for terminal in ("신선대", "감만", "광양서부", "E1CT", "HJIT")]
 
-        ncols = 1 + len(EMPTY_TABLE_COLS) + 1  # 구분 + 하위 컬럼들 + 합계
-        total_col = ncols - 1
-        parent.grid_columnconfigure(0, weight=2, uniform="empty_col")
-        for c in range(1, ncols):
-            parent.grid_columnconfigure(c, weight=1, uniform="empty_col")
+        # 컬럼 배치: 구분 | DC(3칸) | div | OT(2칸) | div | FR(2칸) | div | 합계.
+        # 그룹 사이에 얇은 구분선을 넣어 DC/OT/FR 경계가 한눈에 들어오게 한다.
+        LABEL_COL = 0
+        group_cols = []  # [(group_label, [(counts_key, sub_label, col), ...]), ...]
+        c = 1
+        for group_label, cols in EMPTY_TABLE_GROUPS:
+            entries = [(key, sub_label, c + i) for i, (key, sub_label) in enumerate(cols)]
+            group_cols.append((group_label, entries))
+            c += len(cols) + 1  # 그룹 칸 + 뒤따르는 구분선 칸
+        divider_cols = [entries[-1][2] + 1 for _, entries in group_cols]
+        total_col = c
+        ncols = c + 1
+
+        parent.grid_columnconfigure(LABEL_COL, weight=3, uniform="empty_col")
+        for _, entries in group_cols:
+            for _key, _label, col in entries:
+                parent.grid_columnconfigure(col, weight=2, uniform="empty_col")
+        for dc in divider_cols:
+            parent.grid_columnconfigure(dc, weight=0, minsize=16)
+        parent.grid_columnconfigure(total_col, weight=2, uniform="empty_col")
+
+        def _divider(row, col, bg, rowspan=1):
+            cell = tk.Frame(parent, bg=bg)
+            cell.grid(row=row, column=col, rowspan=rowspan, sticky="nsew")
+            tk.Frame(cell, bg=COLOR_BORDER, width=1).place(relx=0.5, rely=0, relheight=1, anchor="n")
 
         # 1행: 구분/합계는 두 헤더 행을 세로로 합쳐서(rowspan) 쓰고,
         # DC/OT/FR은 하위 사이즈 칸 개수만큼 가로로 합쳐(columnspan) 그린다.
         tk.Label(parent, text="구분", bg=COLOR_CARD, fg=COLOR_MUTED,
-                 font=(FONT, 11, "bold")).grid(row=0, column=0, rowspan=2, sticky="nsew", pady=(4, 12))
-        tk.Label(parent, text="합계", bg=COLOR_CARD, fg=COLOR_MUTED,
-                 font=(FONT, 11, "bold")).grid(row=0, column=total_col, rowspan=2, sticky="nsew", pady=(4, 12))
+                 font=(FONT, 11, "bold")).grid(row=0, column=LABEL_COL, rowspan=2, sticky="nsew",
+                                                padx=(16, 0), pady=(6, 12))
+        tk.Label(parent, text="합계", bg=COLOR_PRIMARY_SOFT, fg=COLOR_PRIMARY_DARK,
+                 font=(FONT, 11, "bold")).grid(row=0, column=total_col, rowspan=2, sticky="nsew",
+                                                padx=(0, 16), pady=(6, 12))
 
-        c = 1
-        for group_label, cols in EMPTY_TABLE_GROUPS:
+        for group_label, entries in group_cols:
             tk.Label(parent, text=group_label, bg=COLOR_CARD, fg=COLOR_TEXT,
-                     font=(FONT, 11, "bold")).grid(row=0, column=c, columnspan=len(cols), sticky="nsew", pady=(4, 2))
-            for _key, sub_label in cols:
+                     font=(FONT, 12, "bold")).grid(row=0, column=entries[0][2], columnspan=len(entries),
+                                                    sticky="nsew", pady=(6, 2))
+            for _key, sub_label, col in entries:
                 tk.Label(parent, text=sub_label, bg=COLOR_CARD, fg=COLOR_MUTED,
-                         font=(FONT, 10)).grid(row=1, column=c, sticky="nsew", pady=(0, 12))
-                c += 1
+                         font=(FONT, 10)).grid(row=1, column=col, sticky="nsew", pady=(0, 12))
 
-        tk.Frame(parent, bg=COLOR_BORDER, height=1).grid(
+        for dc in divider_cols:
+            _divider(0, dc, COLOR_CARD, rowspan=2)
+
+        tk.Frame(parent, bg=COLOR_PRIMARY, height=2).grid(
             row=2, column=0, columnspan=ncols, sticky="ew")
 
         for r, (carrier, terminal) in enumerate(rows):
@@ -747,21 +770,27 @@ class BerthMonitorApp:
             grid_row = r + 3
 
             label_cell = tk.Frame(parent, bg=bg)
-            label_cell.grid(row=grid_row, column=0, sticky="nsew")
+            label_cell.grid(row=grid_row, column=LABEL_COL, sticky="nsew")
             dot = tk.Canvas(label_cell, width=8, height=8, bg=bg, highlightthickness=0)
             dot.create_oval(1, 1, 7, 7, fill=EMPTY_CARRIER_COLOR[carrier], outline="")
-            dot.pack(side="left", padx=(16, 6), pady=13)
+            dot.pack(side="left", padx=(16, 6), pady=15)
             tk.Label(label_cell, text=f"{carrier} · {terminal}", bg=bg, fg=COLOR_TEXT,
                      font=(FONT, 11, "bold")).pack(side="left")
 
-            for c, (key, _label) in enumerate(EMPTY_TABLE_COLS, start=1):
-                val = counts.get(key, 0)
-                tk.Label(parent, text=str(val) if val else "-", bg=bg,
-                         fg=COLOR_TEXT if val else COLOR_MUTED,
-                         font=(FONT, 11)).grid(row=grid_row, column=c, sticky="nsew", pady=13)
+            for _group_label, entries in group_cols:
+                for key, _sub_label, col in entries:
+                    val = counts.get(key, 0)
+                    tk.Label(parent, text=str(val) if val else "–", bg=bg,
+                             fg=COLOR_TEXT if val else COLOR_MUTED, font=(FONT, 11),
+                             anchor="e", padx=10).grid(
+                        row=grid_row, column=col, sticky="nsew", pady=15)
 
-            tk.Label(parent, text=str(total), bg=bg, fg=COLOR_TEXT,
-                     font=(FONT, 12, "bold")).grid(row=grid_row, column=total_col, sticky="nsew", pady=13)
+            for dc in divider_cols:
+                _divider(grid_row, dc, bg)
+
+            tk.Label(parent, text=str(total), bg=COLOR_PRIMARY_SOFT, fg=COLOR_PRIMARY_DARK,
+                     font=(FONT, 13, "bold"), anchor="e", justify="right").grid(
+                row=grid_row, column=total_col, sticky="nsew", padx=(0, 16), pady=15)
 
 
 def main():
