@@ -482,6 +482,55 @@ def fetch_hpnt():
     return rows
 
 
+BPTC_EMPTY_CARRIER_CODES = ("DYS", "NSS")
+BPTC_EMPTY_COL_LABELS = ["GP20", "GP40", "OT20", "OT40", "FL20", "FL40", "HQ20", "HQ40", "HQ45"]
+
+
+def fetch_bptc_empty_status(carrier_codes=BPTC_EMPTY_CARRIER_CODES):
+    """BPTC(신선대/감만) On-Dock 공컨테이너 현황을 가져온다.
+
+    이 페이지는 AJAX 없이 서버가 전체 선사 목록이 채워진 표를 그대로
+    내려준다(필터 파라미터 없음). 한 행에 신선대 10칸 + 감만 10칸이
+    나란히 붙어 있어(각 칸 = 선사코드 1 + 컨테이너 타입/사이즈별 수량 9),
+    전체를 받아온 뒤 carrier_codes에 해당하는 선사만 골라낸다.
+    활동이 없는 선사/터미널 조합은 원본 표에 행 자체가 없어 결과에서 빠질 수 있다.
+    반환: [{carrier, terminal, counts: {GP20: n, ...}, total}, ...]
+    """
+    url = "https://info.bptc.co.kr/content/od/frame/yard_new_empty_frame_od_kr.jsp"
+    params = {"p_id": "EMPT_NE_KR", "snb_num": "8", "snb_div": "service", "pop_ok": "Y"}
+    resp = requests.get(url, params=params, headers=HEADERS, timeout=15)
+    resp.raise_for_status()
+    resp.encoding = resp.apparent_encoding or "euc-kr"
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    table = soup.find("table", class_="tabletypeC")
+    if table is None:
+        return []
+
+    # 이 페이지 마크업이 <tbody> 여는 태그 앞에 낙오된 <tr>가 하나 끼어 있는 등
+    # 불량해서(E1CT와 비슷한 사례), BeautifulSoup가 데이터 행들을 <tbody> 안에
+    # 제대로 넣지 못한다. table.find_all("tr")로 전체를 직접 순회하면
+    # 헤더 행(<th>만 있어 td 0개)과 빈 낙오 행은 아래 개수 체크로 자연히 걸러진다.
+    codes = tuple(c.upper() for c in carrier_codes)
+    rows = []
+    for tr in table.find_all("tr"):
+        cells = [td.get_text(strip=True) for td in tr.find_all("td")]
+        if len(cells) < 20:
+            continue
+        for terminal, chunk in (("신선대", cells[0:10]), ("감만", cells[10:20])):
+            carrier = chunk[0].strip().upper()
+            if carrier not in codes:
+                continue
+            counts = {}
+            total = 0
+            for label, raw in zip(BPTC_EMPTY_COL_LABELS, chunk[1:]):
+                val = int(raw) if raw.strip().isdigit() else 0
+                counts[label] = val
+                total += val
+            rows.append({"carrier": carrier, "terminal": terminal, "counts": counts, "total": total})
+    return rows
+
+
 # 여기에 사이트를 추가로 등록하세요. (이름, 함수)
 SOURCES = [
     ("BPTC (신선대/감만)", fetch_bptc),

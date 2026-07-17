@@ -10,7 +10,7 @@ import matplotlib.ticker as mticker
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-from scraper import fetch_all, fetch_bptc_work_status
+from scraper import fetch_all, fetch_bptc_work_status, fetch_bptc_empty_status
 from assets import LOGO_PNG_B64
 
 matplotlib.rcParams["font.family"] = "Malgun Gothic"
@@ -53,12 +53,24 @@ REGION_COLOR = {"부산": "#2f6fed", "인천": "#f5a524", "광양": "#12b886"}
 REGION_LABEL = {"전체": "전체", "부산": "부산항 · BPTC·HPNT",
                 "인천": "인천항 · HJIT·SNCT·E1CT", "광양": "광양항 · GWCT"}
 WORK_TAB_KEY = "작업현황"
+EMPTY_TAB_KEY = "공컨현황"
 # 탭 pill은 폭이 좁아 항구 이름만 짧게 표기한다 (소스 목록은 통계 카드에서 보여준다).
 TAB_LABEL = {"전체": "전체", "부산": "부산항", "인천": "인천항", "광양": "광양항",
-             WORK_TAB_KEY: "본선작업현황"}
+             WORK_TAB_KEY: "본선작업현황", EMPTY_TAB_KEY: "공컨현황"}
 
 TAB_KEYS = ["전체", "부산", "인천", "광양"]
-ALL_TAB_KEYS = TAB_KEYS + [WORK_TAB_KEY]
+ALL_TAB_KEYS = TAB_KEYS + [WORK_TAB_KEY, EMPTY_TAB_KEY]
+EMPTY_CARRIER_COLOR = {"DYS": COLOR_PRIMARY, "NSS": "#12b886"}
+# 공컨현황 표의 컬럼 구성: (scraper의 counts 키, 표에 보여줄 라벨).
+# BPTC 원본 페이지의 4개 그룹(GP/DC, OT/UT, FL/PL/FC/FR, HQ/HC)을
+# 업계에서 흔히 쓰는 DC/OT/FR/HC 표기로 줄여서 보여준다.
+# 주의: 이 페이지엔 냉동컨테이너(RF/Reefer) 데이터가 없어 HC(High Cube)로 대체했다.
+EMPTY_TABLE_COLS = [
+    ("GP20", "DC 20'"), ("GP40", "DC 40'"),
+    ("OT20", "OT 20'"), ("OT40", "OT 40'"),
+    ("FL20", "FR 20'"), ("FL40", "FR 40'"),
+    ("HQ20", "HC 20'"), ("HQ40", "HC 40'"), ("HQ45", "HC 45'"),
+]
 FONT = "맑은 고딕"
 _WEEKDAY_KR = ["월", "화", "수", "목", "금", "토", "일"]
 
@@ -336,6 +348,11 @@ class BerthMonitorApp:
             card.widget().place(x=0, y=0, relwidth=1, relheight=1)
             self.cards[key] = card
 
+            if key == EMPTY_TAB_KEY:
+                # 공컨현황은 그래프가 아니라 표로 보여주는 게 더 명확해서
+                # matplotlib 캔버스 없이 Card.inner에 직접 표를 그린다.
+                continue
+
             fig = Figure(figsize=(11, 6), dpi=100, facecolor=COLOR_CARD)
             ax = fig.add_subplot(111)
             canvas = FigureCanvasTkAgg(fig, master=card.inner)
@@ -428,9 +445,14 @@ class BerthMonitorApp:
         except Exception as e:
             work_data = []
             errors = list(errors) + [f"본선작업현황: {e}"]
-        self.root.after(0, lambda: self._on_data(data, errors, work_data))
+        try:
+            empty_data = fetch_bptc_empty_status()
+        except Exception as e:
+            empty_data = []
+            errors = list(errors) + [f"공컨테이너현황: {e}"]
+        self.root.after(0, lambda: self._on_data(data, errors, work_data, empty_data))
 
-    def _on_data(self, data, errors, work_data):
+    def _on_data(self, data, errors, work_data, empty_data):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         msg = f"마지막 갱신 {now}"
         if errors:
@@ -457,6 +479,7 @@ class BerthMonitorApp:
         for region in TAB_KEYS[1:]:
             self._draw_gantt(region, [d for d in data if d.get("region") == region])
         self._draw_work_status(work_data)
+        self._draw_empty_status(empty_data)
 
     def _draw_gantt(self, tab_key, data):
         ax = self.axes[tab_key]
@@ -623,6 +646,55 @@ class BerthMonitorApp:
         ax.tick_params(axis="y", colors=COLOR_TEXT, length=0)
         fig.tight_layout()
         canvas.draw()
+
+    def _draw_empty_status(self, data):
+        # 이 탭은 그래프가 아니라 표라서(사용자 요청) Card.inner에 매 갱신마다
+        # Label 그리드를 새로 그린다. 데이터가 4~9칸으로 적어 다시 그리는
+        # 비용이 무시할 만하다.
+        parent = self.cards[EMPTY_TAB_KEY].inner
+        for w in parent.winfo_children():
+            w.destroy()
+
+        by_key = {(d["carrier"], d["terminal"]): d for d in data}
+        rows = [(carrier, terminal)
+                for carrier in EMPTY_CARRIER_COLOR
+                for terminal in ("신선대", "감만")]
+
+        headers = ["구분"] + [label for _, label in EMPTY_TABLE_COLS] + ["합계"]
+        ncols = len(headers)
+        parent.grid_columnconfigure(0, weight=2, uniform="empty_col")
+        for c in range(1, ncols):
+            parent.grid_columnconfigure(c, weight=1, uniform="empty_col")
+
+        for c, text in enumerate(headers):
+            tk.Label(parent, text=text, bg=COLOR_CARD, fg=COLOR_MUTED,
+                     font=(FONT, 11, "bold")).grid(row=0, column=c, sticky="nsew", pady=(4, 12))
+        tk.Frame(parent, bg=COLOR_BORDER, height=1).grid(
+            row=1, column=0, columnspan=ncols, sticky="ew")
+
+        for r, (carrier, terminal) in enumerate(rows):
+            d = by_key.get((carrier, terminal))
+            counts = d["counts"] if d else {}
+            total = d["total"] if d else 0
+            bg = COLOR_CARD if r % 2 == 0 else COLOR_ROW_ALT
+            grid_row = r + 2
+
+            label_cell = tk.Frame(parent, bg=bg)
+            label_cell.grid(row=grid_row, column=0, sticky="nsew")
+            dot = tk.Canvas(label_cell, width=8, height=8, bg=bg, highlightthickness=0)
+            dot.create_oval(1, 1, 7, 7, fill=EMPTY_CARRIER_COLOR[carrier], outline="")
+            dot.pack(side="left", padx=(16, 6), pady=13)
+            tk.Label(label_cell, text=f"{carrier} · {terminal}", bg=bg, fg=COLOR_TEXT,
+                     font=(FONT, 11, "bold")).pack(side="left")
+
+            for c, (key, _label) in enumerate(EMPTY_TABLE_COLS, start=1):
+                val = counts.get(key, 0)
+                tk.Label(parent, text=str(val) if val else "-", bg=bg,
+                         fg=COLOR_TEXT if val else COLOR_MUTED,
+                         font=(FONT, 11)).grid(row=grid_row, column=c, sticky="nsew", pady=13)
+
+            tk.Label(parent, text=str(total), bg=bg, fg=COLOR_TEXT,
+                     font=(FONT, 12, "bold")).grid(row=grid_row, column=ncols - 1, sticky="nsew", pady=13)
 
 
 def main():
