@@ -498,6 +498,38 @@ def fetch_e1ct_empty_status(carrier_code="DYS"):
     return []
 
 
+def fetch_hjit_empty_status(carrier_code="DYS"):
+    """HJIT(한진인천컨테이너터미널) 메인페이지의 "Empty 반출 가능 개수"에서
+    선사코드에 해당하는 행만 뽑아온다.
+
+    메인페이지가 /kor/main/prg2/getPrg2.json을 호출해 선사별 20/40/40HC/45
+    반출가능 수량을 JSON으로 채워 넣는다(인증 불필요). 45(m45)는 실제로
+    쓰이지 않는 항목이라 가져오지 않는다.
+    fetch_bptc_empty_status()와 같은 모양으로 반환해 공컨현황 표에
+    그대로 이어붙일 수 있게 한다.
+    """
+    url = "https://www.hjit.co.kr/kor/main/prg2/getPrg2.json"
+    resp = requests.get(url, headers=HEADERS, timeout=15)
+    resp.raise_for_status()
+    obj = resp.json()
+
+    for o in obj.get("result", {}).get("data_list", []):
+        if (o.get("opr") or "").strip().upper() != carrier_code.upper():
+            continue
+        counts = {
+            "GP20": int(o.get("m20")) if str(o.get("m20")).isdigit() else 0,
+            "GP40": int(o.get("m40")) if str(o.get("m40")).isdigit() else 0,
+            "HQ40": int(o.get("m40hc")) if str(o.get("m40hc")).isdigit() else 0,
+        }
+        return [{
+            "carrier": carrier_code.upper(),
+            "terminal": "HJIT",
+            "counts": counts,
+            "total": sum(counts.values()),
+        }]
+    return []
+
+
 def _find_hpnt_table(soup):
     """결과 표를 찾는다. 페이지가 표를 여러 겹으로 감싸고 있어(레이아웃용
     바깥 표들도 안쪽 표의 텍스트를 그대로 포함), '선명' 헤더 셀을 정확히
