@@ -170,6 +170,32 @@ class Card:
         return self.container
 
 
+class _Tooltip:
+    """마우스오버시 뜨는 작은 팝업 툴팁 (overrideredirect Toplevel)."""
+
+    def __init__(self, master):
+        self.master = master
+        self.tip = None
+        self.label = None
+
+    def show(self, text, x, y):
+        if self.tip is None:
+            self.tip = tk.Toplevel(self.master)
+            self.tip.overrideredirect(True)
+            self.tip.attributes("-topmost", True)
+            self.label = tk.Label(self.tip, text=text, bg="#111827", fg="white",
+                                   font=(FONT, 9, "bold"), padx=8, pady=4, justify="left")
+            self.label.pack()
+        else:
+            self.label.config(text=text)
+            self.tip.deiconify()
+        self.tip.geometry(f"+{x}+{y}")
+
+    def hide(self):
+        if self.tip is not None:
+            self.tip.withdraw()
+
+
 class Segmented(tk.Frame):
     """rounded pill 스타일 탭 선택기. 트랙 전체를 하나의 캔버스로 그려
     둥근 알약 모양 컨테이너 느낌을 낸다. "전체"처럼 짧은 라벨과
@@ -183,21 +209,41 @@ class Segmented(tk.Frame):
     TEXT_PAD_X = 18
     MIN_PILL_W = 76
 
-    def __init__(self, master, options, command):
+    def __init__(self, master, options, command, tooltips=None):
         super().__init__(master, bg=COLOR_BG)
         self.command = command
         self.options = options
         self.active = options[0]
+        self.tooltips = tooltips or {}
         self._font_active = tkfont.Font(family=FONT, size=11, weight="bold")
         self._font_idle = tkfont.Font(family=FONT, size=11)
         self._pill_bounds = []  # [(x1, x2), ...], _render()가 채운다
+        self._tooltip = _Tooltip(self)
 
         w, h = self._measure()
         self.canvas = tk.Canvas(self, width=w, height=h, bg=COLOR_BG,
                                  highlightthickness=0, bd=0)
         self.canvas.pack()
         self.canvas.bind("<Button-1>", self._on_click)
+        self.canvas.bind("<Motion>", self._on_motion)
+        self.canvas.bind("<Leave>", lambda e: self._tooltip.hide())
         self._render()
+
+    def _key_at(self, event):
+        for key, (x1, x2) in zip(self.options, self._pill_bounds):
+            if x1 <= event.x <= x2 and self.PAD <= event.y <= self.PAD + self.PILL_H:
+                return key
+        return None
+
+    def _on_motion(self, event):
+        key = self._key_at(event)
+        text = self.tooltips.get(key) if key else None
+        if text:
+            x = self.canvas.winfo_rootx() + event.x + 14
+            y = self.canvas.winfo_rooty() + event.y + 22
+            self._tooltip.show(text, x, y)
+        else:
+            self._tooltip.hide()
 
     def _pill_width(self, key):
         text_w = max(self._font_active.measure(TAB_LABEL[key]),
@@ -211,10 +257,9 @@ class Segmented(tk.Frame):
         return w, h
 
     def _on_click(self, event):
-        for key, (x1, x2) in zip(self.options, self._pill_bounds):
-            if x1 <= event.x <= x2 and self.PAD <= event.y <= self.PAD + self.PILL_H:
-                self.select(key)
-                return
+        key = self._key_at(event)
+        if key is not None:
+            self.select(key)
 
     def select(self, key):
         if key == self.active:
@@ -308,6 +353,7 @@ class BerthMonitorApp:
         root.title("Real-time Berth/Empty stock Monitoring")
         root.geometry("1360x860")
         root.configure(bg=COLOR_BG)
+        root.iconphoto(True, tk.PhotoImage(data=LOGO_PNG_B64))
 
         self._build_header()
         self._build_summary()
@@ -393,7 +439,8 @@ class BerthMonitorApp:
 
         tab_row = tk.Frame(outer, bg=COLOR_BG)
         tab_row.pack(fill="x", pady=(0, 14))
-        Segmented(tab_row, ALL_TAB_KEYS, self._on_tab_change).pack(side="left")
+        Segmented(tab_row, ALL_TAB_KEYS, self._on_tab_change,
+                  tooltips={WORK_TAB_KEY: "BPT Only"}).pack(side="left")
 
         self.chart_container = tk.Frame(outer, bg=COLOR_BG)
         self.chart_container.pack(fill="both", expand=True)
