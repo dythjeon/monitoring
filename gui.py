@@ -7,15 +7,30 @@ from datetime import datetime, timedelta
 import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.dates as mdates
+import matplotlib.font_manager as fm
 import matplotlib.ticker as mticker
 from matplotlib.figure import Figure
+from matplotlib.patches import FancyBboxPatch, Rectangle
+from matplotlib.transforms import offset_copy
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from scraper import (fetch_all, fetch_bptc_work_status, fetch_bptc_empty_status,
                      fetch_gwct_empty_status, fetch_e1ct_empty_status, fetch_hjit_empty_status)
 from assets import LOGO_PNG_B64
 
-matplotlib.rcParams["font.family"] = "Malgun Gothic"
+
+def _pick_font():
+    """설치된 것 중 가장 앞선 후보를 쓴다. Pretendard가 기본이지만 이 exe가
+    다른 PC에서 실행될 수도 있어 맑은 고딕까지 폴백을 둔다."""
+    available = {f.name for f in fm.fontManager.ttflist}
+    for candidate in ("Pretendard", "Pretendard Variable", "Noto Sans KR", "Malgun Gothic"):
+        if candidate in available:
+            return candidate
+    return "Malgun Gothic"
+
+
+FONT = _pick_font()
+matplotlib.rcParams["font.family"] = FONT
 matplotlib.rcParams["axes.unicode_minus"] = False
 
 REFRESH_INTERVAL_SEC = 1800  # 30분마다 자동 갱신
@@ -31,10 +46,10 @@ COLOR_MUTED = "#8a8f98"       # 보조 텍스트
 COLOR_PRIMARY = "#2f6fed"     # 포인트 블루
 COLOR_PRIMARY_DARK = "#1d4fc4"  # 포인트 블루(진한 톤, 그라디언트/그림자용)
 COLOR_PRIMARY_SOFT = "#eaf1fe"
-COLOR_TRACK = "#eef0f4"       # 세그먼트 탭 트랙 배경
-COLOR_ROW_ALT = "#f7f8fb"     # 간트 행 줄무늬(짝수 행)
-COLOR_GRID_MAJOR = "#dfe2e8"  # 날짜 경계 세로선
-COLOR_GRID_MINOR = "#eef0f4"  # 6시간 보조 세로선
+COLOR_TRACK = "#e4e8f0"       # 진행률 트랙 배경 (줄무늬 행 위에서도 보이도록)
+COLOR_ROW_ALT = "#eff1f6"     # 간트 행 줄무늬(짝수 행)
+COLOR_GRID_MAJOR = "#ccd2dc"  # 날짜 경계 세로선 (보조선보다 확실히 진하게)
+COLOR_GRID_MINOR = "#edf0f5"  # 6시간 보조 세로선
 COLOR_SHADOW = "#c3c8d4"      # 카드 아래 그림자 베이스 톤
 COLOR_NOW = "#ef4444"         # 간트 차트의 현재 시각 표시선
 COLOR_SAT = "#2f6fed"         # 토요일 날짜 라벨
@@ -80,7 +95,6 @@ EMPTY_TABLE_GROUPS = [
     ("OT", [("OT20", "20'"), ("OT40", "40'")]),
     ("FR", [("FL20", "20'"), ("FL40", "40'")]),
 ]
-FONT = "맑은 고딕"
 _WEEKDAY_KR = ["월", "화", "수", "목", "금", "토", "일"]
 
 # ---- 항로(Route) 코드 -> 다음 기항 국가/권역 분류 ----
@@ -93,7 +107,10 @@ ROUTE_REGION = {
     "KRX": "러시아", "KRV": "러시아",
 }
 COUNTRY_KEYS = ["일본", "중국", "동남아", "러시아"]
-COUNTRY_COLOR = {"일본": "#e64980", "중국": "#fa5252", "동남아": "#12b886", "러시아": "#7048e8"}
+# 항구 색(REGION_COLOR)과 겹치지 않아야 한다. 통계 카드의 점 색이 곧 차트
+# 안의 색이라, 같은 색이 두 가지를 뜻하면 범례가 깨진다. 예전엔 동남아가
+# 광양과 같은 #12b886이었다.
+COUNTRY_COLOR = {"일본": "#e64980", "중국": "#fa5252", "동남아": "#00b8d4", "러시아": "#7048e8"}
 
 
 def _classify_country(d):
@@ -135,6 +152,41 @@ def _weekday_color(dt):
     return {5: COLOR_SAT, 6: COLOR_SUN}.get(dt.weekday(), COLOR_TEXT)
 
 
+BAR_RADIUS_PX = 5    # 간트/진행률 막대 모서리 반경(픽셀)
+DOT_INSET_PT = 10    # 막대 왼쪽 안쪽에 찍는 행선지 점의 들여쓰기(포인트)
+DOT_MIN_BAR_PX = 120  # 이보다 좁은 막대에는 점을 찍지 않는다(선명을 밀어내 버린다)
+
+
+def _add_bar(ax, y, x0, x1, height, facecolor, edgecolor="none", linewidth=0, zorder=2):
+    """둥근 모서리 가로 막대. 반경은 그린 뒤 _round_bars()가 픽셀 기준으로 맞춘다."""
+    patch = FancyBboxPatch((x0, y - height / 2), max(x1 - x0, 1e-9), height,
+                            boxstyle="round,pad=0,rounding_size=0",
+                            facecolor=facecolor, edgecolor=edgecolor,
+                            linewidth=linewidth, zorder=zorder, mutation_aspect=1)
+    ax.add_patch(patch)
+    return patch
+
+
+def _round_bars(ax, patches, radius_px=BAR_RADIUS_PX):
+    """막대 모서리 반경을 픽셀 기준으로 맞춘다.
+
+    boxstyle의 rounding_size는 데이터 좌표라, x가 '일'이고 y가 '행'인 이 차트에선
+    그대로 두면 모서리가 납작한 타원으로 찌그러진다. mutation_aspect로 y 축척을
+    x에 맞춘 뒤 반경을 픽셀→데이터 단위로 환산한다. 축 변환이 확정된 뒤
+    (draw 이후) 호출해야 한다.
+    """
+    origin = ax.transData.transform((0, 0))
+    kx = abs(ax.transData.transform((1, 0))[0] - origin[0])   # x 1단위당 픽셀
+    ky = abs(ax.transData.transform((0, 1))[1] - origin[1])   # y 1단위당 픽셀
+    if kx <= 0 or ky <= 0:
+        return
+    for patch in patches:
+        # 짧은 막대에서 반경이 변의 절반을 넘으면 모양이 깨진다.
+        limit_px = min(patch.get_width() * kx, patch.get_height() * ky) / 2
+        patch.set_mutation_aspect(kx / ky)
+        patch.set_boxstyle("round", pad=0, rounding_size=min(radius_px, limit_px) / kx)
+
+
 def _shorten(line, ratio):
     core = line[:-1] if line.endswith("…") else line
     keep = int(len(core) * ratio) - 1
@@ -143,7 +195,7 @@ def _shorten(line, ratio):
     return core[:keep] + "…"
 
 
-def _fit_label(txt, max_px, renderer, lines):
+def _fit_bar_labels(name_txt, code_txt, max_px, renderer):
     """막대 밖으로 삐져나오는 라벨을 실제 렌더 폭 기준으로 줄인다.
 
     폰트 폭을 글자 수로 추정하면 한글/영문·굵기에 따라 빗나가서 글자가 잘린
@@ -151,29 +203,31 @@ def _fit_label(txt, max_px, renderer, lines):
     다시 재는 식으로 수렴시킨다.
 
     좁을 때 우선순위는 선명 > 항차다. 둘 다 말줄임해서 "HE…/JH…"처럼 양쪽
-    다 못 읽게 만드느니, 항차 줄을 버리고 선명에 폭을 몰아준다.
+    다 못 읽게 만드느니, 항차 줄을 버리고 선명에 폭을 몰아준다. 항차가
+    빠지면 선명을 막대 한가운데로 다시 내린다.
     """
-    def width():
-        return txt.get_window_extent(renderer).width
+    def fits(artist):
+        return artist.get_window_extent(renderer).width <= max_px
+
+    if code_txt is not None and (max_px <= 0 or not fits(code_txt) or not fits(name_txt)):
+        code_txt.set_visible(False)
+        name_txt.set_verticalalignment("center")
+        name_txt.xyann = (name_txt.xyann[0], 0)
 
     if max_px <= 0:
-        txt.set_text("")
+        name_txt.set_text("")
         return
 
-    if width() <= max_px:      # 선명 + 항차가 그대로 들어감
-        return
-
-    txt.set_text(lines[0])     # 항차를 버리고 선명만
     for _ in range(6):
-        w = width()
-        if w <= max_px:
+        if fits(name_txt):
             return
-        shorter = _shorten(txt.get_text(), max_px / w)
+        shorter = _shorten(name_txt.get_text(),
+                           max_px / name_txt.get_window_extent(renderer).width)
         if not shorter:
             break
-        txt.set_text(shorter)
-    if width() > max_px:
-        txt.set_text("")
+        name_txt.set_text(shorter)
+    if not fits(name_txt):
+        name_txt.set_text("")
 
 
 def _progress_color(pct):
@@ -199,7 +253,8 @@ class Card:
 
     def __init__(self, parent, bg_page=COLOR_BG, radius=16, pad=16, bg_card=COLOR_CARD):
         self.radius = radius
-        self.pad = pad
+        # pad는 스칼라 또는 (좌우, 상하) 튜플
+        self.padx, self.pady = pad if isinstance(pad, tuple) else (pad, pad)
         self.bg_card = bg_card
         # tk.Canvas의 lift()/lower()/tkraise()는 캔버스 아이템용으로 덮어써져 있어
         # 위젯 스태킹(탭 전환)에 쓸 수 없다. 그래서 스태킹 가능한 일반 Frame으로
@@ -232,10 +287,10 @@ class Card:
                     fill=self.bg_card, outline=COLOR_BORDER, width=1, tags="bg")
         self.canvas.tag_lower("bg")
         self.canvas.tag_lower("shadow")
-        iw, ih = max(w - 2 * self.pad, 10), max(h - 2 * self.pad, 10)
+        iw, ih = max(w - 2 * self.padx, 10), max(h - 2 * self.pady, 10)
         if self._win is None:
-            self._win = self.canvas.create_window(self.pad, self.pad, anchor="nw", window=self.inner)
-        self.canvas.coords(self._win, self.pad, self.pad)
+            self._win = self.canvas.create_window(self.padx, self.pady, anchor="nw", window=self.inner)
+        self.canvas.coords(self._win, self.padx, self.pady)
         self.canvas.itemconfig(self._win, width=iw, height=ih)
 
     def widget(self):
@@ -269,17 +324,18 @@ class _Tooltip:
 
 
 class Segmented(tk.Frame):
-    """rounded pill 스타일 탭 선택기. 트랙 전체를 하나의 캔버스로 그려
-    둥근 알약 모양 컨테이너 느낌을 낸다. "전체"처럼 짧은 라벨과
-    "국내공컨현황"처럼 긴 라벨이 섞여 있어, 고정폭 대신 각 pill을
-    텍스트 실측 너비에 맞춰 그린다(안 그러면 긴 라벨끼리 좁은 pill 안에서
-    겹쳐 보인다)."""
+    """언더라인 방식 탭. 전체 폭에 얇은 베이스라인을 깔고, 선택된 탭 아래만
+    굵은 강조선을 얹는다. 예전 pill 스타일은 색 면적이 커서 그 아래 카드보다
+    시선을 먼저 가져가버렸다.
 
-    PILL_H = 38
-    PAD = 5
-    GAP = 8
-    TEXT_PAD_X = 18
-    MIN_PILL_W = 76
+    "전체"처럼 짧은 라벨과 "국내공컨현황"처럼 긴 라벨이 섞여 있어 탭 폭은
+    고정하지 않고 텍스트 실측 너비로 잡는다.
+    """
+
+    TAB_H = 34          # 글자 영역 높이
+    UNDERLINE_H = 3     # 선택 탭 강조선 두께
+    TEXT_PAD_X = 16     # 글자 좌우 여백
+    GAP = 6             # 탭 사이 간격
 
     def __init__(self, master, options, command, tooltips=None):
         super().__init__(master, bg=COLOR_BG)
@@ -287,46 +343,51 @@ class Segmented(tk.Frame):
         self.options = options
         self.active = options[0]
         self.tooltips = tooltips or {}
+        self.hover = None
         self._font_active = tkfont.Font(family=FONT, size=11, weight="bold")
         self._font_idle = tkfont.Font(family=FONT, size=11)
-        self._pill_bounds = []  # [(x1, x2), ...], _render()가 채운다
+        self._tab_bounds = []  # [(x1, x2), ...], _render()가 채운다
         self._tooltip = _Tooltip(self)
 
-        w, h = self._measure()
-        self.canvas = tk.Canvas(self, width=w, height=h, bg=COLOR_BG,
+        self.canvas = tk.Canvas(self, height=self.TAB_H + self.UNDERLINE_H, bg=COLOR_BG,
                                  highlightthickness=0, bd=0)
-        self.canvas.pack()
+        self.canvas.pack(fill="x")
         self.canvas.bind("<Button-1>", self._on_click)
         self.canvas.bind("<Motion>", self._on_motion)
-        self.canvas.bind("<Leave>", lambda e: self._tooltip.hide())
-        self._render()
+        self.canvas.bind("<Leave>", self._on_leave)
+        # 베이스라인이 콘텐츠 폭 전체를 가로지르려면 폭이 바뀔 때마다 다시 그려야 한다.
+        self.canvas.bind("<Configure>", lambda e: self._render())
 
     def _key_at(self, event):
-        for key, (x1, x2) in zip(self.options, self._pill_bounds):
-            if x1 <= event.x <= x2 and self.PAD <= event.y <= self.PAD + self.PILL_H:
+        for key, (x1, x2) in zip(self.options, self._tab_bounds):
+            if x1 <= event.x <= x2 and event.y <= self.TAB_H:
                 return key
         return None
 
     def _on_motion(self, event):
         key = self._key_at(event)
+        if key != self.hover:
+            self.hover = key
+            self.canvas.config(cursor="hand2" if key else "")
+            self._render()
         text = self.tooltips.get(key) if key else None
         if text:
-            x = self.canvas.winfo_rootx() + event.x + 14
-            y = self.canvas.winfo_rooty() + event.y + 22
-            self._tooltip.show(text, x, y)
+            self._tooltip.show(text,
+                               self.canvas.winfo_rootx() + event.x + 14,
+                               self.canvas.winfo_rooty() + event.y + 22)
         else:
             self._tooltip.hide()
 
-    def _pill_width(self, key):
+    def _on_leave(self, _event):
+        self._tooltip.hide()
+        if self.hover is not None:
+            self.hover = None
+            self._render()
+
+    def _tab_width(self, key):
         text_w = max(self._font_active.measure(TAB_LABEL[key]),
                      self._font_idle.measure(TAB_LABEL[key]))
-        return max(self.MIN_PILL_W, text_w + self.TEXT_PAD_X * 2)
-
-    def _measure(self):
-        widths = [self._pill_width(key) for key in self.options]
-        w = self.PAD * 2 + sum(widths) + self.GAP * (len(self.options) - 1)
-        h = self.PAD * 2 + self.PILL_H
-        return w, h
+        return text_w + self.TEXT_PAD_X * 2
 
     def _on_click(self, event):
         key = self._key_at(event)
@@ -342,25 +403,31 @@ class Segmented(tk.Frame):
 
     def _render(self):
         self.canvas.delete("all")
-        w, h = self._measure()
-        self.canvas.config(width=w, height=h)
-        _round_rect(self.canvas, 0, 0, w, h, radius=h / 2, fill=COLOR_TRACK, outline="")
+        w = self.canvas.winfo_width()
+        base_y = self.TAB_H
 
-        self._pill_bounds = []
-        x = self.PAD
+        self.canvas.create_line(0, base_y + 1, max(w, 1), base_y + 1,
+                                fill=COLOR_BORDER, width=1)
+
+        self._tab_bounds = []
+        x = 0
         for key in self.options:
-            pill_w = self._pill_width(key)
-            x1, x2 = x, x + pill_w
-            cx, cy = (x1 + x2) / 2, h / 2
+            tab_w = self._tab_width(key)
+            x1, x2 = x, x + tab_w
             if key == self.active:
-                _round_rect(self.canvas, x1, self.PAD, x2, h - self.PAD,
-                            radius=self.PILL_H / 2, fill=COLOR_PRIMARY, outline="")
-                self.canvas.create_text(cx, cy, text=TAB_LABEL[key], fill="white",
-                                         font=self._font_active)
+                color, font = COLOR_PRIMARY, self._font_active
+            elif key == self.hover:
+                color, font = COLOR_TEXT, self._font_idle
             else:
-                self.canvas.create_text(cx, cy, text=TAB_LABEL[key], fill=COLOR_MUTED,
-                                         font=self._font_idle)
-            self._pill_bounds.append((x1, x2))
+                color, font = COLOR_MUTED, self._font_idle
+            self.canvas.create_text((x1 + x2) / 2, self.TAB_H / 2,
+                                     text=TAB_LABEL[key], fill=color, font=font)
+            if key == self.active:
+                self.canvas.create_rectangle(x1 + self.TEXT_PAD_X / 2, base_y,
+                                              x2 - self.TEXT_PAD_X / 2,
+                                              base_y + self.UNDERLINE_H,
+                                              fill=COLOR_PRIMARY, outline="")
+            self._tab_bounds.append((x1, x2))
             x = x2 + self.GAP
 
 
@@ -398,26 +465,37 @@ class Spinner(tk.Canvas):
 
 
 class StatCard:
-    def __init__(self, parent, label, dot_color, emphasis=False):
-        # 합계 카드(emphasis)는 나머지 카드와 색으로 구분해 눈이 먼저 가게 한다.
-        self.bg = COLOR_PRIMARY_SOFT if emphasis else COLOR_CARD
-        self.card = Card(parent, radius=10, pad=10, bg_card=self.bg)
-        row = tk.Frame(self.card.inner, bg=self.bg)
-        row.pack(fill="both", expand=True)
-        dot = tk.Canvas(row, width=8, height=8, bg=self.bg, highlightthickness=0)
-        dot.create_oval(1, 1, 7, 7, fill=dot_color, outline="")
-        dot.pack(side="left")
-        tk.Label(row, text=label, bg=self.bg,
-                 fg=COLOR_PRIMARY_DARK if emphasis else COLOR_MUTED,
-                 font=(FONT, 10, "bold")).pack(side="left", padx=(5, 0))
+    """라벨(작고 연하게) 위 / 숫자(크고 굵게) 아래의 2단 구성.
 
-        # 단위("척")를 값보다 작고 옅게 붙여 숫자가 도드라지게 한다.
-        tk.Label(row, text="척", bg=self.bg, fg=COLOR_MUTED,
-                 font=(FONT, 9)).pack(side="right", padx=(2, 0), pady=(4, 0))
-        self.value_label = tk.Label(row, text="-", bg=self.bg,
+    카드 배경은 그 카드가 대표하는 색을 아주 옅게(8%) 깐다. 점 하나로만
+    구분하면 7장이 늘어섰을 때 어느 카드가 무슨 색인지 눈에 안 들어온다.
+    """
+
+    TINT = 0.08
+
+    def __init__(self, parent, label, dot_color, emphasis=False):
+        self.bg = _blend(COLOR_CARD, dot_color, self.TINT)
+        self.card = Card(parent, radius=10, pad=(12, 8), bg_card=self.bg)
+        box = tk.Frame(self.card.inner, bg=self.bg)
+        box.pack(fill="both", expand=True)
+
+        top = tk.Frame(box, bg=self.bg)
+        top.pack(fill="x", anchor="w")
+        dot = tk.Canvas(top, width=8, height=8, bg=self.bg, highlightthickness=0)
+        dot.create_oval(1, 1, 7, 7, fill=dot_color, outline="")
+        dot.pack(side="left", pady=(2, 0))
+        tk.Label(top, text=label, bg=self.bg, fg=COLOR_MUTED,
+                 font=(FONT, 9)).pack(side="left", padx=(5, 0))
+
+        bottom = tk.Frame(box, bg=self.bg)
+        bottom.pack(fill="x", anchor="w", pady=(1, 0))
+        self.value_label = tk.Label(bottom, text="-", bg=self.bg,
                                      fg=COLOR_PRIMARY_DARK if emphasis else COLOR_TEXT,
-                                     font=(FONT, 17 if emphasis else 15, "bold"))
-        self.value_label.pack(side="right")
+                                     font=(FONT, 21, "bold"))
+        self.value_label.pack(side="left")
+        # 단위("척")는 값보다 작고 연하게 붙여 숫자가 도드라지게 한다.
+        tk.Label(bottom, text="척", bg=self.bg, fg=COLOR_MUTED,
+                 font=(FONT, 9)).pack(side="left", padx=(3, 0), pady=(0, 3), anchor="s")
 
     def widget(self):
         return self.card.widget()
@@ -436,10 +514,14 @@ class BerthMonitorApp:
         root.configure(bg=COLOR_BG)
         root.iconphoto(True, tk.PhotoImage(data=LOGO_PNG_B64))
 
+        self._last_draw = None
+        self._resize_job = None
+
         self._build_header()
         self._build_summary()
         self._build_content()
         self._build_watermark()
+        self.chart_container.bind("<Configure>", self._on_resize)
 
         # 위젯들이 자연 크기를 요구하며 geometry()로 지정한 크기를 밀어낼 수 있어
         # 레이아웃 구성이 끝난 뒤 창 크기를 한번 더 확정한다.
@@ -523,11 +605,14 @@ class BerthMonitorApp:
             [(key, TAB_LABEL[key], REGION_COLOR[key]) for key in TAB_KEYS[1:]],
             [(key, key, COUNTRY_COLOR[key]) for key in COUNTRY_KEYS],
         ]
-        self._build_stat_row(groups, top_pad=14)
+        # 헤더와 카드 사이를 넉넉히 띄워 상단 정보 블록이 서로 붙어 보이지 않게 한다.
+        self._build_stat_row(groups, top_pad=26)
 
     def _build_stat_row(self, groups, top_pad):
-        bar = tk.Frame(self.root, bg=COLOR_BG, height=64)
-        bar.pack(fill="x", padx=28, pady=(top_pad, 10))
+        # 높이는 내용(라벨+숫자 약 61px)에 여유를 더해 잡는다. 딱 맞추면 DPI가
+        # 다른 PC에서 숫자 아랫부분이 잘린다.
+        bar = tk.Frame(self.root, bg=COLOR_BG, height=88)
+        bar.pack(fill="x", padx=28, pady=(top_pad, 18))
         bar.grid_propagate(False)
         bar.grid_rowconfigure(0, weight=1)
 
@@ -553,10 +638,9 @@ class BerthMonitorApp:
         outer = tk.Frame(self.root, bg=COLOR_BG)
         outer.pack(fill="both", expand=True, padx=28, pady=(0, 24))
 
-        tab_row = tk.Frame(outer, bg=COLOR_BG)
-        tab_row.pack(fill="x", pady=(0, 14))
-        Segmented(tab_row, ALL_TAB_KEYS, self._on_tab_change,
-                  tooltips={WORK_TAB_KEY: "BPT Only"}).pack(side="left")
+        # 언더라인 탭은 베이스라인이 콘텐츠 폭 전체를 가로질러야 해서 fill="x"로 깐다.
+        Segmented(outer, ALL_TAB_KEYS, self._on_tab_change,
+                  tooltips={WORK_TAB_KEY: "BPT Only"}).pack(fill="x", pady=(0, 16))
 
         self.chart_container = tk.Frame(outer, bg=COLOR_BG)
         self.chart_container.pack(fill="both", expand=True)
@@ -567,6 +651,8 @@ class BerthMonitorApp:
         self.canvases = {}
         self.hover_targets = {}   # tab_key -> [(patch, tooltip_text), ...], 매 그리기마다 새로 채움
         self.hover_annot = {}     # tab_key -> 현재 활성 annotation (ax.clear()마다 새로 만들어짐)
+        self.row_highlight = {}   # tab_key -> 마우스 올린 행을 덮는 사각형
+        self.row_counts = {}      # tab_key -> 현재 그려진 행 수
 
         for key in ALL_TAB_KEYS:
             card = Card(self.chart_container, radius=18)
@@ -588,6 +674,8 @@ class BerthMonitorApp:
             self.canvases[key] = canvas
             self.hover_targets[key] = []
             self.hover_annot[key] = None
+            self.row_highlight[key] = None
+            self.row_counts[key] = 0
 
             canvas.mpl_connect("motion_notify_event", lambda event, k=key: self._on_hover(k, event))
             canvas.mpl_connect("figure_leave_event", lambda event, k=key: self._hide_hover(k))
@@ -619,11 +707,23 @@ class BerthMonitorApp:
         self.hover_annot[tab_key] = annot
         self.hover_targets[tab_key] = []
 
+        # 마우스 올린 행을 통째로 밝히는 띠. x는 축 비율(0~1), y는 데이터 좌표를
+        # 쓰는 혼합 변환이라 폭 걱정 없이 행 높이만 맞추면 된다.
+        highlight = Rectangle((0, -9), 1, 1, transform=ax.get_yaxis_transform(),
+                              facecolor=COLOR_HOVER_ROW, edgecolor="none",
+                              zorder=0.5, visible=False)
+        ax.add_patch(highlight)
+        self.row_highlight[tab_key] = highlight
+
     def _on_hover(self, tab_key, event):
         annot = self.hover_annot.get(tab_key)
         if annot is None or event.inaxes != self.axes[tab_key]:
             self._hide_hover(tab_key)
             return
+
+        # 행 강조는 막대 위가 아니라 그 행 어디에 있어도 걸리게 한다.
+        changed = self._update_row_highlight(tab_key, event)
+
         for patch, text in self.hover_targets[tab_key]:
             contains, _ = patch.contains(event)
             if contains:
@@ -632,12 +732,41 @@ class BerthMonitorApp:
                 annot.set_visible(True)
                 self.canvases[tab_key].draw_idle()
                 return
-        self._hide_hover(tab_key)
+        if annot.get_visible():
+            annot.set_visible(False)
+            changed = True
+        if changed:
+            self.canvases[tab_key].draw_idle()
+
+    def _update_row_highlight(self, tab_key, event):
+        """마우스가 있는 행으로 강조 띠를 옮긴다. 실제로 바뀌었으면 True."""
+        highlight = self.row_highlight.get(tab_key)
+        if highlight is None:
+            return False
+        row = round(event.ydata) if event.ydata is not None else -1
+        inside = 0 <= row < self.row_counts.get(tab_key, 0)
+        if not inside:
+            if highlight.get_visible():
+                highlight.set_visible(False)
+                return True
+            return False
+        if highlight.get_visible() and highlight.get_y() == row - 0.5:
+            return False
+        highlight.set_y(row - 0.5)
+        highlight.set_visible(True)
+        return True
 
     def _hide_hover(self, tab_key):
+        changed = False
         annot = self.hover_annot.get(tab_key)
         if annot is not None and annot.get_visible():
             annot.set_visible(False)
+            changed = True
+        highlight = self.row_highlight.get(tab_key)
+        if highlight is not None and highlight.get_visible():
+            highlight.set_visible(False)
+            changed = True
+        if changed:
             self.canvases[tab_key].draw_idle()
 
     def _build_watermark(self):
@@ -716,11 +845,30 @@ class BerthMonitorApp:
         for key in COUNTRY_KEYS:
             self.stat_cards[key].set_value(countries.count(key))
 
+        # 창 크기가 바뀌면 막대 모서리 반경과 라벨 말줄임을 다시 계산해야 해서
+        # (둘 다 픽셀 기준) 마지막 데이터를 들고 있다가 그대로 다시 그린다.
+        self._last_draw = (data, work_data, empty_data)
+        self._render_all()
+
+    def _render_all(self):
+        data, work_data, empty_data = self._last_draw
         self._draw_gantt("전체", data)
         for region in TAB_KEYS[1:]:
             self._draw_gantt(region, [d for d in data if d.get("region") == region])
         self._draw_work_status(work_data)
         self._draw_empty_status(empty_data)
+
+    def _on_resize(self, _event=None):
+        if self._last_draw is None:
+            return
+        if self._resize_job is not None:
+            self.root.after_cancel(self._resize_job)
+        # 드래그하는 동안 매 픽셀마다 다시 그리면 버벅이므로 멈춘 뒤에 한 번만.
+        self._resize_job = self.root.after(250, self._redraw_after_resize)
+
+    def _redraw_after_resize(self):
+        self._resize_job = None
+        self._render_all()
 
     def _draw_gantt(self, tab_key, data):
         ax = self.axes[tab_key]
@@ -742,14 +890,19 @@ class BerthMonitorApp:
         usable = [d for d in data if _in_window(d, win_start, win_end)]
         rows = sorted({(d["region"], d["terminal"], d["berth"]) for d in usable})
         row_index = {key: i for i, key in enumerate(rows)}
+        self.row_counts[tab_key] = len(rows)
 
         for i in range(len(rows)):
             if i % 2 == 1:
                 ax.axhspan(i - 0.5, i + 0.5, color=COLOR_ROW_ALT, zorder=0)
 
         span = win_end_num - win_start_num
-        # 라벨 말줄임은 그린 뒤에 실제 렌더 폭을 재서 처리한다 (아래 참고).
-        pending_labels = []  # [(text 아티스트, 막대 좌우 데이터 좌표), ...]
+        # 라벨 말줄임과 모서리 반경은 그린 뒤에 실제 픽셀을 재서 처리한다(아래 참고).
+        pending = []   # [(name 아티스트, code 아티스트, 점 아티스트, 좌, 우), ...]
+        bars = []
+        # 행선지 점은 막대 왼쪽 끝에서 일정 '포인트'만큼 안쪽에 찍는다. 데이터
+        # 좌표로 잡으면 창 크기에 따라 위치가 흔들려서 offset 변환을 쓴다.
+        dot_trans = offset_copy(ax.transData, fig=fig, x=DOT_INSET_PT, y=0, units="points")
 
         for d in usable:
             y = row_index[(d["region"], d["terminal"], d["berth"])]
@@ -759,33 +912,48 @@ class BerthMonitorApp:
             color = REGION_COLOR.get(d.get("region"), COLOR_PRIMARY)
             # 지금 접안 중인 선박은 테두리를 진하게 줘서 한눈에 띄게 한다.
             in_progress = d["eta"] <= now <= d["etd"]
-            bar = ax.barh(y, width, left=start, height=0.62, color=color,
+            bar = _add_bar(ax, y, start, start + width, 0.62, color,
                            edgecolor=_blend(color, "#000000", 0.3) if in_progress else COLOR_CARD,
-                           linewidth=2 if in_progress else 1.5, zorder=2)
+                           linewidth=2 if in_progress else 1.2)
+            bars.append(bar)
 
             tooltip = d["ship_name"]
             if d.get("voyage"):
                 tooltip += f" ({d['voyage']})"
             tooltip += f"\n작업예정: {_fmt_dt(d['eta'])} ~ {_fmt_dt(d['etd'])}"
-            self.hover_targets[tab_key].append((bar.patches[0], tooltip))
+            country = _classify_country(d)
+            if country:
+                tooltip += f"\n행선지: {country}"
+            self.hover_targets[tab_key].append((bar, tooltip))
 
-            # 막대 폭에 비례해 표기 수준을 낮춘다: 넓으면 선명/항차 두 줄,
-            # 좁으면 선명만 한 줄, 아주 좁으면 글자를 넣지 않아 넘침을 막는다.
-            if width > span / 22:
-                fontsize = 10.5
-                lines = [d["ship_name"]] + ([d["voyage"]] if d.get("voyage") else [])
-            elif width > span / 55:
-                fontsize = 9
-                lines = [d["ship_name"]]
-            else:
-                fontsize = 9
-                lines = []
+            # 행선지 색 점 — 통계 카드의 점과 같은 색/모양이라 그대로 범례가 된다.
+            dot = None
+            if country:
+                dot = ax.plot([start], [y], marker="o", linestyle="none", markersize=5,
+                              markerfacecolor=COUNTRY_COLOR[country], markeredgecolor="white",
+                              markeredgewidth=0.8, transform=dot_trans, zorder=4)[0]
 
-            if lines:
-                txt = ax.text(start + width / 2, y, "\n".join(lines), va="center", ha="center",
-                              fontsize=fontsize, color="white", fontweight="bold", zorder=3,
-                              linespacing=1.4, clip_on=True)
-                pending_labels.append((txt, start, end, lines))
+            # 막대 폭에 따라 표기 수준을 낮춘다: 넓으면 선명+항차, 좁으면 선명만,
+            # 아주 좁으면 글자를 넣지 않는다. 실제 넘침 여부는 그린 뒤 다시 본다.
+            if width <= span / 55:
+                if dot is not None:
+                    pending.append((None, None, dot, start, start + width))
+                continue
+
+            two_line = width > span / 22 and d.get("voyage")
+            # 선명은 굵고 크게, 항차는 작고 연하게 — 한 막대 안에서도 위계를 준다.
+            name_txt = ax.annotate(d["ship_name"], xy=(start + width / 2, y),
+                                   xytext=(0, 1.5 if two_line else 0), textcoords="offset points",
+                                   ha="center", va="bottom" if two_line else "center",
+                                   fontsize=10.5 if two_line else 9.5, fontweight="bold",
+                                   color="white", zorder=3, clip_on=True)
+            code_txt = None
+            if two_line:
+                code_txt = ax.annotate(d["voyage"], xy=(start + width / 2, y),
+                                       xytext=(0, -2), textcoords="offset points",
+                                       ha="center", va="top", fontsize=8.5, color="white",
+                                       alpha=0.75, zorder=3, clip_on=True)
+            pending.append((name_txt, code_txt, dot, start, start + width))
 
         if rows:
             ax.set_yticks(range(len(rows)))
@@ -825,9 +993,10 @@ class BerthMonitorApp:
                     label.set_fontweight("bold")
                     label.set_fontsize(12.5)
 
-            # 현재 시각선
+            # 현재 시각선 — 격자선을 진하게 올린 만큼 이쪽은 더 굵게 가서
+            # 날짜 구분선과 헷갈리지 않게 한다.
             now_num = mdates.date2num(now)
-            ax.axvline(now_num, color=COLOR_NOW, linewidth=1.6, zorder=6)
+            ax.axvline(now_num, color=COLOR_NOW, linewidth=2.2, zorder=6)
             # 배지는 axes 위쪽 안에 붙인다. y를 axes 비율로 잡아야 행 수가
             # 적어 위아래 여백(slack)이 생겨도 첫 행 높이를 따라 내려오지 않는다.
             # 축 밖으로 빼면 tight_layout이 자리를 잡아주지 않아 잘릴 수 있다.
@@ -848,20 +1017,28 @@ class BerthMonitorApp:
         fig.tight_layout()
         canvas.draw()
 
-        # 라벨 말줄임은 한 번 그린 뒤에 한다. 그래야 renderer와 확정된 축 변환이
-        # 생겨서 "이 막대는 픽셀로 몇 칸인지"와 "이 글자는 몇 픽셀인지"를 같은
-        # 기준으로 비교할 수 있다. 줄인 게 있을 때만 다시 그린다.
-        if pending_labels:
+        # 모서리 반경과 라벨 말줄임은 한 번 그린 뒤에 한다. 그래야 renderer와
+        # 확정된 축 변환이 생겨서 "이 막대는 픽셀로 몇 칸인지"와 "이 글자는 몇
+        # 픽셀인지"를 같은 기준으로 비교할 수 있다.
+        if bars:
+            _round_bars(ax, bars)
             renderer = canvas.get_renderer()
-            trimmed = False
-            for txt, start, end, lines in pending_labels:
-                x0 = ax.transData.transform((start, 0))[0]
-                x1 = ax.transData.transform((end, 0))[0]
-                before = txt.get_text()
-                _fit_label(txt, abs(x1 - x0) - 8, renderer, lines)  # 좌우 4px씩 여백
-                trimmed = trimmed or txt.get_text() != before
-            if trimmed:
-                canvas.draw()
+            for name_txt, code_txt, dot, start, end in pending:
+                bar_px = abs(ax.transData.transform((end, 0))[0]
+                             - ax.transData.transform((start, 0))[0])
+                # 좁은 막대에서는 행선지 점이 글자를 덮으므로 점을 뺀다.
+                if dot is not None and bar_px < DOT_MIN_BAR_PX:
+                    dot.set_visible(False)
+                    dot = None
+                if name_txt is None:
+                    continue
+                # 점이 있으면 글자를 그만큼 오른쪽으로 밀고 쓸 수 있는 폭도 줄인다.
+                shift = DOT_INSET_PT if dot is not None else 0
+                for artist in (name_txt, code_txt):
+                    if artist is not None:
+                        artist.xyann = (shift, artist.xyann[1])
+                _fit_bar_labels(name_txt, code_txt, bar_px - 8 - shift * 2, renderer)
+            canvas.draw()
 
     def _draw_work_status(self, data):
         ax = self.axes[WORK_TAB_KEY]
@@ -878,38 +1055,46 @@ class BerthMonitorApp:
             return (d.get("terminal") or "", num, d.get("berth") or "")
 
         rows = sorted(data, key=_berth_sort_key)
+        self.row_counts[WORK_TAB_KEY] = len(rows)
+        bars = []
 
         if rows:
-            for i in range(len(rows)):
+            yticklabels = []
+            for i, d in enumerate(rows):
                 if i % 2 == 1:
                     ax.axhspan(i - 0.5, i + 0.5, color=COLOR_ROW_ALT, zorder=0)
-                track = ax.barh(i, 100, height=0.55, color=COLOR_TRACK, edgecolor="none", zorder=1)
-                d = rows[i]
+                track = _add_bar(ax, i, 0, 100, 0.55, COLOR_TRACK, zorder=1)
+                bars.append(track)
+
                 if d.get("eta") and d.get("etd"):
                     time_line = f"\n작업예정: {_fmt_dt(d['eta'])} ~ {_fmt_dt(d['etd'])}"
                 else:
                     time_line = ""
                 tooltip = f"{d['ship_name']}({d.get('line', '')}) · {d.get('voyage', '')}{time_line}\n진행률 {d.get('progress', 0)}%"
-                self.hover_targets[WORK_TAB_KEY].append((track.patches[0], tooltip))
+                self.hover_targets[WORK_TAB_KEY].append((track, tooltip))
 
-            yticklabels = []
-            for i, d in enumerate(rows):
                 pct = d.get("progress", 0)
                 color = _progress_color(pct)
-                ax.barh(i, pct, height=0.55, color=color, edgecolor=COLOR_CARD,
-                        linewidth=1.2, zorder=2)
+                if pct > 0:
+                    bars.append(_add_bar(ax, i, 0, pct, 0.55, color,
+                                         edgecolor=COLOR_CARD, linewidth=1.2, zorder=2))
 
-                inner_label = f"{d['ship_name']}({d.get('line', '')})"
+                # 막대 안에 다 안 들어가면(진행률이 낮으면) 오른쪽 바깥에 쓴다.
+                inside = pct >= 18
+                name = f"{d['ship_name']}({d.get('line', '')})"
+                ax.annotate(name, xy=(pct / 2 if inside else pct + 2, i),
+                            xytext=(0, 1.5 if d.get("voyage") else 0),
+                            textcoords="offset points",
+                            ha="center" if inside else "left",
+                            va="bottom" if d.get("voyage") else "center",
+                            fontsize=9.5, fontweight="bold",
+                            color="white" if inside else COLOR_TEXT, zorder=3, clip_on=True)
                 if d.get("voyage"):
-                    inner_label += f"\n{d['voyage']}"
-                if pct >= 18:
-                    ax.text(pct / 2, i, inner_label, va="center", ha="center",
-                            fontsize=9.5, color="white", fontweight="bold", zorder=3,
-                            linespacing=1.3, clip_on=True)
-                else:
-                    ax.text(pct + 2, i, inner_label, va="center", ha="left",
-                            fontsize=9.5, color=COLOR_TEXT, fontweight="bold", zorder=3,
-                            linespacing=1.3)
+                    ax.annotate(d["voyage"], xy=(pct / 2 if inside else pct + 2, i),
+                                xytext=(0, -2), textcoords="offset points",
+                                ha="center" if inside else "left", va="top", fontsize=8.5,
+                                color="white" if inside else COLOR_MUTED,
+                                alpha=0.75 if inside else 1.0, zorder=3, clip_on=True)
 
                 ax.text(103, i, f"{pct}%", va="center", ha="left",
                         fontsize=11, color=color, fontweight="bold", zorder=3)
@@ -937,6 +1122,10 @@ class BerthMonitorApp:
         ax.tick_params(axis="y", colors=COLOR_TEXT, length=0)
         fig.tight_layout()
         canvas.draw()
+
+        if bars:
+            _round_bars(ax, bars)
+            canvas.draw()
 
     def _draw_empty_status(self, data):
         # 이 탭은 그래프가 아니라 표라서(사용자 요청) Card.inner에 매 갱신마다
