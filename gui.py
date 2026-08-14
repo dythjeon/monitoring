@@ -20,6 +20,7 @@ matplotlib.rcParams["axes.unicode_minus"] = False
 
 REFRESH_INTERVAL_SEC = 1800  # 30분마다 자동 갱신
 GANTT_WINDOW_DAYS = 7        # 간트 차트에 표시할 최대 기간(고정값)
+MIN_GANTT_ROWS = 5           # 행이 이보다 적어도 막대 두께는 이 기준으로 유지
 
 # ---- surff.kr 느낌의 라이트/미니멀 팔레트 ----
 COLOR_BG = "#f4f5f8"          # 페이지 배경 (아주 옅은 회색)
@@ -35,6 +36,10 @@ COLOR_ROW_ALT = "#f7f8fb"     # 간트 행 줄무늬(짝수 행)
 COLOR_GRID_MAJOR = "#dfe2e8"  # 날짜 경계 세로선
 COLOR_GRID_MINOR = "#eef0f4"  # 6시간 보조 세로선
 COLOR_SHADOW = "#c3c8d4"      # 카드 아래 그림자 베이스 톤
+COLOR_NOW = "#ef4444"         # 간트 차트의 현재 시각 표시선
+COLOR_SAT = "#2f6fed"         # 토요일 날짜 라벨
+COLOR_SUN = "#e8474c"         # 일요일 날짜 라벨
+COLOR_HOVER_ROW = "#eef4ff"   # 표 행 마우스오버 하이라이트
 
 
 def _hex_to_rgb(h):
@@ -62,6 +67,7 @@ TAB_LABEL = {"전체": "전체", "부산": "부산항", "인천": "인천항", "
 
 TAB_KEYS = ["전체", "부산", "인천", "광양"]
 ALL_TAB_KEYS = TAB_KEYS + [WORK_TAB_KEY, EMPTY_TAB_KEY]
+TOTAL_KEY = "__total__"   # 통계 카드 전용 키 (탭이 아니라 합계 카드)
 EMPTY_CARRIER_COLOR = {"DYS": COLOR_PRIMARY}
 # 국내공컨현황 표의 컬럼 구성: (그룹명, [(scraper counts 키, 하위 라벨), ...]).
 # 2단 헤더로 그려진다: 1행엔 그룹명(DC/OT/FR)이 colspan으로, 2행엔 하위
@@ -105,6 +111,71 @@ def _classify_country(d):
     return ROUTE_REGION.get(route)
 
 
+def _gantt_window():
+    """간트 차트와 통계 카드가 함께 쓰는 표시 구간 (오늘 00:00 ~ +7일).
+
+    기준을 "지금"이 아니라 "오늘 자정"으로 잡아야 현재 시각 표시선이 차트
+    왼쪽 경계에 붙어버리지 않고 하루 중 어디쯤인지 보인다. 오늘 이미 출항한
+    선박도 맥락으로 함께 보인다.
+    """
+    start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    return start, start + timedelta(days=GANTT_WINDOW_DAYS)
+
+
+def _in_window(d, win_start, win_end):
+    return (d.get("eta") and d.get("etd")
+            and d["etd"] >= win_start and d["eta"] <= win_end)
+
+
+def _fmt_dt(dt):
+    return f"{dt.month}/{dt.day}({_WEEKDAY_KR[dt.weekday()]}) {dt.strftime('%H:%M')}"
+
+
+def _weekday_color(dt):
+    return {5: COLOR_SAT, 6: COLOR_SUN}.get(dt.weekday(), COLOR_TEXT)
+
+
+def _shorten(line, ratio):
+    core = line[:-1] if line.endswith("…") else line
+    keep = int(len(core) * ratio) - 1
+    if keep < 2:
+        return ""
+    return core[:keep] + "…"
+
+
+def _fit_label(txt, max_px, renderer, lines):
+    """막대 밖으로 삐져나오는 라벨을 실제 렌더 폭 기준으로 줄인다.
+
+    폰트 폭을 글자 수로 추정하면 한글/영문·굵기에 따라 빗나가서 글자가 잘린
+    채로 남는다. 그려진 뒤 renderer로 실제 폭을 재고, 넘치는 비율만큼 잘라
+    다시 재는 식으로 수렴시킨다.
+
+    좁을 때 우선순위는 선명 > 항차다. 둘 다 말줄임해서 "HE…/JH…"처럼 양쪽
+    다 못 읽게 만드느니, 항차 줄을 버리고 선명에 폭을 몰아준다.
+    """
+    def width():
+        return txt.get_window_extent(renderer).width
+
+    if max_px <= 0:
+        txt.set_text("")
+        return
+
+    if width() <= max_px:      # 선명 + 항차가 그대로 들어감
+        return
+
+    txt.set_text(lines[0])     # 항차를 버리고 선명만
+    for _ in range(6):
+        w = width()
+        if w <= max_px:
+            return
+        shorter = _shorten(txt.get_text(), max_px / w)
+        if not shorter:
+            break
+        txt.set_text(shorter)
+    if width() > max_px:
+        txt.set_text("")
+
+
 def _progress_color(pct):
     if pct < 30:
         return "#fa5252"
@@ -126,16 +197,17 @@ def _round_rect(canvas, x1, y1, x2, y2, radius=14, **kwargs):
 class Card:
     """둥근 모서리 카드. .inner 프레임에 위젯을 채우면 된다."""
 
-    def __init__(self, parent, bg_page=COLOR_BG, radius=16, pad=16):
+    def __init__(self, parent, bg_page=COLOR_BG, radius=16, pad=16, bg_card=COLOR_CARD):
         self.radius = radius
         self.pad = pad
+        self.bg_card = bg_card
         # tk.Canvas의 lift()/lower()/tkraise()는 캔버스 아이템용으로 덮어써져 있어
         # 위젯 스태킹(탭 전환)에 쓸 수 없다. 그래서 스태킹 가능한 일반 Frame으로
         # 감싸고, 그 Frame을 widget()으로 노출한다.
         self.container = tk.Frame(parent, bg=bg_page)
         self.canvas = tk.Canvas(self.container, bg=bg_page, highlightthickness=0, bd=0)
         self.canvas.pack(fill="both", expand=True)
-        self.inner = tk.Frame(self.canvas, bg=COLOR_CARD)
+        self.inner = tk.Frame(self.canvas, bg=bg_card)
         self._win = None
         self.canvas.bind("<Configure>", self._redraw)
 
@@ -157,7 +229,7 @@ class Card:
             _round_rect(self.canvas, 1, 1 + offset * 0.6, w - 1, h - 1 + offset,
                         radius=self.radius + i * 0.5, fill=col, outline="", tags="shadow")
         _round_rect(self.canvas, 1, 1, w - 1, h - 1, radius=self.radius,
-                    fill=COLOR_CARD, outline=COLOR_BORDER, width=1, tags="bg")
+                    fill=self.bg_card, outline=COLOR_BORDER, width=1, tags="bg")
         self.canvas.tag_lower("bg")
         self.canvas.tag_lower("shadow")
         iw, ih = max(w - 2 * self.pad, 10), max(h - 2 * self.pad, 10)
@@ -326,18 +398,25 @@ class Spinner(tk.Canvas):
 
 
 class StatCard:
-    def __init__(self, parent, label, dot_color):
-        self.card = Card(parent, radius=10, pad=10)
-        row = tk.Frame(self.card.inner, bg=COLOR_CARD)
+    def __init__(self, parent, label, dot_color, emphasis=False):
+        # 합계 카드(emphasis)는 나머지 카드와 색으로 구분해 눈이 먼저 가게 한다.
+        self.bg = COLOR_PRIMARY_SOFT if emphasis else COLOR_CARD
+        self.card = Card(parent, radius=10, pad=10, bg_card=self.bg)
+        row = tk.Frame(self.card.inner, bg=self.bg)
         row.pack(fill="both", expand=True)
-        dot = tk.Canvas(row, width=8, height=8, bg=COLOR_CARD, highlightthickness=0)
+        dot = tk.Canvas(row, width=8, height=8, bg=self.bg, highlightthickness=0)
         dot.create_oval(1, 1, 7, 7, fill=dot_color, outline="")
         dot.pack(side="left")
-        tk.Label(row, text=label, bg=COLOR_CARD, fg=COLOR_MUTED,
+        tk.Label(row, text=label, bg=self.bg,
+                 fg=COLOR_PRIMARY_DARK if emphasis else COLOR_MUTED,
                  font=(FONT, 10, "bold")).pack(side="left", padx=(5, 0))
 
-        self.value_label = tk.Label(row, text="-", bg=COLOR_CARD, fg=COLOR_TEXT,
-                                     font=(FONT, 15, "bold"))
+        # 단위("척")를 값보다 작고 옅게 붙여 숫자가 도드라지게 한다.
+        tk.Label(row, text="척", bg=self.bg, fg=COLOR_MUTED,
+                 font=(FONT, 9)).pack(side="right", padx=(2, 0), pady=(4, 0))
+        self.value_label = tk.Label(row, text="-", bg=self.bg,
+                                     fg=COLOR_PRIMARY_DARK if emphasis else COLOR_TEXT,
+                                     font=(FONT, 17 if emphasis else 15, "bold"))
         self.value_label.pack(side="right")
 
     def widget(self):
@@ -352,6 +431,8 @@ class BerthMonitorApp:
         self.root = root
         root.title("Real-time Berth/Empty stock Monitoring")
         root.geometry("1360x860")
+        # 이보다 좁아지면 통계 카드 7장과 탭이 서로 밀려 레이아웃이 무너진다.
+        root.minsize(1180, 720)
         root.configure(bg=COLOR_BG)
         root.iconphoto(True, tk.PhotoImage(data=LOGO_PNG_B64))
 
@@ -392,8 +473,10 @@ class BerthMonitorApp:
         left = tk.Frame(inner, bg=COLOR_CARD)
         left.pack(side="left")
         tk.Label(left, text="Real-time Berth/Empty stock Monitoring", bg=COLOR_CARD, fg=COLOR_TEXT,
-                 font=(FONT, 25, "bold")).pack(anchor="w")
-        tk.Label(left, text="부산항 · 인천항 · 광양항 실시간 선석 배정 현황  ·  선사코드 DYS",
+                 font=(FONT, 23, "bold")).pack(anchor="w")
+        subtitle = (f"부산항 · 인천항 · 광양항 실시간 선석 배정 현황  ·  선사코드 DYS"
+                    f"  ·  {GANTT_WINDOW_DAYS}일 구간  ·  {REFRESH_INTERVAL_SEC // 60}분마다 자동 갱신")
+        tk.Label(left, text=subtitle,
                  bg=COLOR_CARD, fg=COLOR_MUTED, font=(FONT, 11)).pack(anchor="w", pady=(5, 0))
 
         right = tk.Frame(inner, bg=COLOR_CARD)
@@ -406,32 +489,65 @@ class BerthMonitorApp:
                                       font=(FONT, 10))
         self.status_label.pack(side="left")
 
+        # 헤더에는 "오류 N건"만 띄우고, 어떤 소스가 실패했는지는 여기에 올려서 본다.
+        self._status_detail = ""
+        self._status_tip = _Tooltip(self.status_label)
+        self.status_label.bind("<Enter>", self._show_status_detail)
+        self.status_label.bind("<Leave>", lambda e: self._status_tip.hide())
+
         btn = tk.Button(right, text="새로고침", command=self.refresh, bd=0,
                          relief="flat", bg=COLOR_PRIMARY, fg="white",
                          activebackground=COLOR_PRIMARY_DARK, activeforeground="white",
-                         font=(FONT, 10, "bold"), padx=20, pady=8, cursor="hand2")
+                         font=(FONT, 10, "bold"), padx=20, pady=8, cursor="hand2",
+                         highlightthickness=0)
         btn.pack(side="top", anchor="e", pady=(10, 0))
+        # 눌리기 전에도 반응이 보이도록 호버 시 색을 한 단계 진하게.
+        btn.bind("<Enter>", lambda e: btn.config(bg=COLOR_PRIMARY_DARK))
+        btn.bind("<Leave>", lambda e: btn.config(bg=COLOR_PRIMARY))
+
+    def _show_status_detail(self, event):
+        if not self._status_detail:
+            return
+        self._status_tip.show(self._status_detail,
+                              self.status_label.winfo_rootx(),
+                              self.status_label.winfo_rooty() + 24)
 
     def _build_summary(self):
         self.stat_cards = {}
 
-        region_keys = TAB_KEYS[1:]
-        port_specs = [(key, TAB_LABEL[key], REGION_COLOR[key]) for key in region_keys]
-        country_specs = [(key, key, COUNTRY_COLOR[key]) for key in COUNTRY_KEYS]
-        self._build_stat_row(port_specs + country_specs, top_pad=14)
+        # 합계 | 항구별 | 행선지별 — 성격이 다른 세 묶음이라 사이에 구분선을 둔다.
+        # 예전엔 7개가 균등하게 한 줄로 붙어 있어 어디까지가 항구고 어디부터
+        # 행선지인지 읽히지 않았다.
+        groups = [
+            [(TOTAL_KEY, "전체", COLOR_PRIMARY)],
+            [(key, TAB_LABEL[key], REGION_COLOR[key]) for key in TAB_KEYS[1:]],
+            [(key, key, COUNTRY_COLOR[key]) for key in COUNTRY_KEYS],
+        ]
+        self._build_stat_row(groups, top_pad=14)
 
-    def _build_stat_row(self, specs, top_pad):
-        bar = tk.Frame(self.root, bg=COLOR_BG, height=58)
-        bar.pack(fill="x", padx=28, pady=(top_pad, 8))
+    def _build_stat_row(self, groups, top_pad):
+        bar = tk.Frame(self.root, bg=COLOR_BG, height=64)
+        bar.pack(fill="x", padx=28, pady=(top_pad, 10))
         bar.grid_propagate(False)
-        for col in range(len(specs)):
-            bar.grid_columnconfigure(col, weight=1, uniform="stat")
         bar.grid_rowconfigure(0, weight=1)
 
-        for i, (key, label, color) in enumerate(specs):
-            sc = StatCard(bar, label, color)
-            sc.widget().grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 10, 0))
-            self.stat_cards[key] = sc
+        col = 0
+        for gi, specs in enumerate(groups):
+            if gi:
+                sep = tk.Frame(bar, bg=COLOR_BG, width=25)
+                sep.grid(row=0, column=col, sticky="ns")
+                bar.grid_columnconfigure(col, weight=0, minsize=25)
+                tk.Frame(sep, bg=COLOR_BORDER, width=1).place(
+                    relx=0.5, rely=0.5, relheight=0.6, anchor="center")
+                col += 1
+
+            for i, (key, label, color) in enumerate(specs):
+                bar.grid_columnconfigure(col, weight=1, uniform="stat")
+                sc = StatCard(bar, label, color, emphasis=(key == TOTAL_KEY))
+                sc.widget().grid(row=0, column=col, sticky="nsew",
+                                 padx=(0 if i == 0 else 10, 0))
+                self.stat_cards[key] = sc
+                col += 1
 
     def _build_content(self):
         outer = tk.Frame(self.root, bg=COLOR_BG)
@@ -579,18 +695,20 @@ class BerthMonitorApp:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         msg = f"마지막 갱신 {now}"
         if errors:
-            msg += "  ·  오류: " + "; ".join(errors)
-        self.status_label.config(text=msg)
+            # 오류 문구를 그대로 붙이면 한 줄이 창 밖까지 늘어나 헤더 레이아웃을
+            # 밀어버린다. 건수만 알리고 상세는 툴팁으로 넘긴다.
+            msg += f"  ·  오류 {len(errors)}건"
+        self.status_label.config(text=msg, fg=COLOR_NOW if errors else COLOR_MUTED)
+        self._status_detail = "\n".join(errors) if errors else ""
 
         # 통계 카드는 간트 차트와 같은 "지금 ~ 지금+7일" 창으로 집계해야
         # 숫자가 일치한다. 소스마다 조회 기간이 제각각이라(HJIT 14일치,
         # SNCT 2주치 등) 필터 없이 data를 그대로 세면 차트에는 안 그려지는
         # 항목까지 카드 숫자에 섞여 들어가 서로 어긋나 보인다.
-        win_start = datetime.now().replace(minute=0, second=0, microsecond=0)
-        win_end = win_start + timedelta(days=GANTT_WINDOW_DAYS)
-        visible = [d for d in data if d.get("eta") and d.get("etd")
-                   and d["etd"] >= win_start and d["eta"] <= win_end]
+        win_start, win_end = _gantt_window()
+        visible = [d for d in data if _in_window(d, win_start, win_end)]
 
+        self.stat_cards[TOTAL_KEY].set_value(len(visible))
         for region in TAB_KEYS[1:]:
             self.stat_cards[region].set_value(sum(1 for d in visible if d.get("region") == region))
 
@@ -613,16 +731,15 @@ class BerthMonitorApp:
         ax.set_facecolor(COLOR_CARD)
         self._make_hover_annot(tab_key)
 
-        # 표시 구간은 항상 "지금 ~ 지금+7일"로 고정한다. 소스별로 2주치까지
+        # 표시 구간은 항상 "오늘 00:00 ~ +7일"로 고정한다. 소스별로 2주치까지
         # 들어있는 데이터를 그대로 그리면 한 화면에 너무 많은 기간이 눌려
         # 들어가 글자가 작아지므로, 이 구간과 겹치는 항목만 그리고 나머지는 자른다.
-        win_start = datetime.now().replace(minute=0, second=0, microsecond=0)
-        win_end = win_start + timedelta(days=GANTT_WINDOW_DAYS)
+        now = datetime.now()
+        win_start, win_end = _gantt_window()
         win_start_num = mdates.date2num(win_start)
         win_end_num = mdates.date2num(win_end)
 
-        usable = [d for d in data if d.get("eta") and d.get("etd")
-                  and d["etd"] >= win_start and d["eta"] <= win_end]
+        usable = [d for d in data if _in_window(d, win_start, win_end)]
         rows = sorted({(d["region"], d["terminal"], d["berth"]) for d in usable})
         row_index = {key: i for i, key in enumerate(rows)}
 
@@ -631,70 +748,120 @@ class BerthMonitorApp:
                 ax.axhspan(i - 0.5, i + 0.5, color=COLOR_ROW_ALT, zorder=0)
 
         span = win_end_num - win_start_num
+        # 라벨 말줄임은 그린 뒤에 실제 렌더 폭을 재서 처리한다 (아래 참고).
+        pending_labels = []  # [(text 아티스트, 막대 좌우 데이터 좌표), ...]
+
         for d in usable:
             y = row_index[(d["region"], d["terminal"], d["berth"])]
             start = max(mdates.date2num(d["eta"]), win_start_num)
             end = min(mdates.date2num(d["etd"]), win_end_num)
             width = max(end - start, 0.01)
             color = REGION_COLOR.get(d.get("region"), COLOR_PRIMARY)
+            # 지금 접안 중인 선박은 테두리를 진하게 줘서 한눈에 띄게 한다.
+            in_progress = d["eta"] <= now <= d["etd"]
             bar = ax.barh(y, width, left=start, height=0.62, color=color,
-                           edgecolor=COLOR_CARD, linewidth=1.5, zorder=2)
+                           edgecolor=_blend(color, "#000000", 0.3) if in_progress else COLOR_CARD,
+                           linewidth=2 if in_progress else 1.5, zorder=2)
 
-            eta_str = f"{d['eta'].month}/{d['eta'].day}({_WEEKDAY_KR[d['eta'].weekday()]}) {d['eta'].strftime('%H:%M')}"
-            etd_str = f"{d['etd'].month}/{d['etd'].day}({_WEEKDAY_KR[d['etd'].weekday()]}) {d['etd'].strftime('%H:%M')}"
             tooltip = d["ship_name"]
             if d.get("voyage"):
                 tooltip += f" ({d['voyage']})"
-            tooltip += f"\n작업예정: {eta_str} ~ {etd_str}"
+            tooltip += f"\n작업예정: {_fmt_dt(d['eta'])} ~ {_fmt_dt(d['etd'])}"
             self.hover_targets[tab_key].append((bar.patches[0], tooltip))
 
             # 막대 폭에 비례해 표기 수준을 낮춘다: 넓으면 선명/항차 두 줄,
             # 좁으면 선명만 한 줄, 아주 좁으면 글자를 넣지 않아 넘침을 막는다.
             if width > span / 22:
-                label = d["ship_name"]
-                if d.get("voyage"):
-                    label += f"\n{d['voyage']}"
                 fontsize = 10.5
+                lines = [d["ship_name"]] + ([d["voyage"]] if d.get("voyage") else [])
             elif width > span / 55:
-                label = d["ship_name"]
                 fontsize = 9
+                lines = [d["ship_name"]]
             else:
-                label = ""
                 fontsize = 9
+                lines = []
 
-            if label:
-                ax.text(start + width / 2, y, label, va="center", ha="center",
-                        fontsize=fontsize, color="white", fontweight="bold", zorder=3,
-                        linespacing=1.4, clip_on=True)
+            if lines:
+                txt = ax.text(start + width / 2, y, "\n".join(lines), va="center", ha="center",
+                              fontsize=fontsize, color="white", fontweight="bold", zorder=3,
+                              linespacing=1.4, clip_on=True)
+                pending_labels.append((txt, start, end, lines))
 
         if rows:
             ax.set_yticks(range(len(rows)))
             ax.set_yticklabels([f"{t} {b}선석" for _, t, b in rows],
-                                fontsize=13, color=COLOR_TEXT, fontweight="bold")
-            ax.set_ylim(len(rows) - 0.5, -0.5)
+                                fontsize=12, fontweight="bold")
+            # 선석 라벨을 항구 색으로 칠해 "전체" 탭에서도 어느 항인지 바로 보이게 한다.
+            for label, (region, _t, _b) in zip(ax.get_yticklabels(), rows):
+                label.set_color(REGION_COLOR.get(region, COLOR_TEXT))
+            # 선석이 한두 개뿐인 탭(광양 등)에서 막대가 화면 높이만큼 두꺼워지지
+            # 않도록, 최소 행 수 기준으로 남는 만큼을 위아래에 나눠 비워둔다.
+            slack = max(MIN_GANTT_ROWS - len(rows), 0) / 2
+            ax.set_ylim(len(rows) - 0.5 + slack, -0.5 - slack)
 
-            def _date_label(x, pos=None):
-                d = mdates.num2date(x)
-                return f"{d.month}/{d.day}({_WEEKDAY_KR[d.weekday()]})"
-
+            # 날짜 라벨은 날짜 경계선이 아니라 그 날 칸의 한가운데(정오)에 둔다.
+            # 경계선에 붙으면 어느 쪽 날을 가리키는지 헷갈린다.
             ax.xaxis.set_major_locator(mdates.DayLocator())
-            ax.xaxis.set_major_formatter(mticker.FuncFormatter(_date_label))
-            ax.xaxis.set_minor_locator(mdates.HourLocator(byhour=[6, 12, 18]))
-            ax.tick_params(axis="x", which="major", labelsize=12, colors=COLOR_TEXT, length=0, pad=10)
-            ax.tick_params(axis="x", which="minor", length=0)
-            ax.grid(axis="x", which="major", linestyle="-", linewidth=1, color=COLOR_GRID_MAJOR, zorder=1)
-            ax.grid(axis="x", which="minor", linestyle="-", linewidth=0.7, color=COLOR_GRID_MINOR, zorder=1)
+            ax.xaxis.set_major_formatter(mticker.NullFormatter())
+            ax.xaxis.set_minor_locator(mdates.HourLocator(byhour=[12]))
+            ax.xaxis.set_minor_formatter(mticker.FuncFormatter(
+                lambda x, pos=None: (lambda dt: f"{dt.month}/{dt.day}({_WEEKDAY_KR[dt.weekday()]})")(mdates.num2date(x))))
+            ax.tick_params(axis="x", which="minor", labelsize=11.5, length=0, pad=10)
+            ax.tick_params(axis="x", which="major", length=0)
+            ax.grid(axis="x", which="major", linestyle="-", linewidth=1,
+                    color=COLOR_GRID_MAJOR, zorder=1)
+
+            # 6/12/18시 보조선은 minor tick을 라벨용으로 써버렸으므로 직접 그린다.
+            for day in range(GANTT_WINDOW_DAYS):
+                for hour in (6, 12, 18):
+                    x = mdates.date2num(win_start + timedelta(days=day, hours=hour))
+                    ax.axvline(x, color=COLOR_GRID_MINOR, linewidth=0.7, zorder=1)
+
+            # 토/일은 색으로, 오늘은 굵기로 구분한다.
+            for label in ax.get_xticklabels(minor=True):
+                dt = mdates.num2date(label.get_position()[0])
+                label.set_color(_weekday_color(dt))
+                if dt.date() == now.date():
+                    label.set_fontweight("bold")
+                    label.set_fontsize(12.5)
+
+            # 현재 시각선
+            now_num = mdates.date2num(now)
+            ax.axvline(now_num, color=COLOR_NOW, linewidth=1.6, zorder=6)
+            # 배지는 axes 위쪽 안에 붙인다. y를 axes 비율로 잡아야 행 수가
+            # 적어 위아래 여백(slack)이 생겨도 첫 행 높이를 따라 내려오지 않는다.
+            # 축 밖으로 빼면 tight_layout이 자리를 잡아주지 않아 잘릴 수 있다.
+            ax.annotate("NOW", xy=(now_num, 1), xycoords=("data", "axes fraction"),
+                        xytext=(0, -3), textcoords="offset points", ha="center", va="top",
+                        fontsize=8.5, fontweight="bold", color="white", zorder=7,
+                        bbox=dict(boxstyle="round,pad=0.28", fc=COLOR_NOW, ec="none"))
         else:
-            ax.text(0.5, 0.5, "표시할 데이터가 없습니다", ha="center", va="center",
+            ax.text(0.5, 0.5, "이 기간에 예정된 선박이 없습니다", ha="center", va="center",
                     transform=ax.transAxes, color=COLOR_MUTED, fontsize=13)
+            ax.set_yticks([])
 
         ax.set_xlim(win_start_num, win_end_num)
         for side in ("top", "right", "left"):
             ax.spines[side].set_visible(False)
         ax.spines["bottom"].set_color(COLOR_BORDER)
-        ax.tick_params(axis="y", colors=COLOR_TEXT, length=0)
+        ax.tick_params(axis="y", length=0)
         fig.tight_layout()
         canvas.draw()
+
+        # 라벨 말줄임은 한 번 그린 뒤에 한다. 그래야 renderer와 확정된 축 변환이
+        # 생겨서 "이 막대는 픽셀로 몇 칸인지"와 "이 글자는 몇 픽셀인지"를 같은
+        # 기준으로 비교할 수 있다. 줄인 게 있을 때만 다시 그린다.
+        if pending_labels:
+            renderer = canvas.get_renderer()
+            trimmed = False
+            for txt, start, end, lines in pending_labels:
+                x0 = ax.transData.transform((start, 0))[0]
+                x1 = ax.transData.transform((end, 0))[0]
+                before = txt.get_text()
+                _fit_label(txt, abs(x1 - x0) - 8, renderer, lines)  # 좌우 4px씩 여백
+                trimmed = trimmed or txt.get_text() != before
+            if trimmed:
+                canvas.draw()
 
     def _draw_work_status(self, data):
         ax = self.axes[WORK_TAB_KEY]
@@ -719,9 +886,7 @@ class BerthMonitorApp:
                 track = ax.barh(i, 100, height=0.55, color=COLOR_TRACK, edgecolor="none", zorder=1)
                 d = rows[i]
                 if d.get("eta") and d.get("etd"):
-                    eta_str = f"{d['eta'].month}/{d['eta'].day}({_WEEKDAY_KR[d['eta'].weekday()]}) {d['eta'].strftime('%H:%M')}"
-                    etd_str = f"{d['etd'].month}/{d['etd'].day}({_WEEKDAY_KR[d['etd'].weekday()]}) {d['etd'].strftime('%H:%M')}"
-                    time_line = f"\n작업예정: {eta_str} ~ {etd_str}"
+                    time_line = f"\n작업예정: {_fmt_dt(d['eta'])} ~ {_fmt_dt(d['etd'])}"
                 else:
                     time_line = ""
                 tooltip = f"{d['ship_name']}({d.get('line', '')}) · {d.get('voyage', '')}{time_line}\n진행률 {d.get('progress', 0)}%"
@@ -747,21 +912,24 @@ class BerthMonitorApp:
                             linespacing=1.3)
 
                 ax.text(103, i, f"{pct}%", va="center", ha="left",
-                        fontsize=11, color=COLOR_TEXT, fontweight="bold", zorder=3)
+                        fontsize=11, color=color, fontweight="bold", zorder=3)
 
                 yticklabels.append(f"{d['terminal']} {d['berth']}선석")
 
             ax.set_yticks(range(len(rows)))
             ax.set_yticklabels(yticklabels, fontsize=12, color=COLOR_TEXT, fontweight="bold")
-            ax.set_ylim(len(rows) - 0.5, -0.5)
+            slack = max(MIN_GANTT_ROWS - len(rows), 0) / 2
+            ax.set_ylim(len(rows) - 0.5 + slack, -0.5 - slack)
             ax.set_xlim(0, 122)
             ax.xaxis.set_major_locator(mticker.MultipleLocator(25))
             ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, pos: f"{int(x)}%" if x <= 100 else ""))
             ax.tick_params(axis="x", labelsize=10, colors=COLOR_MUTED, length=0, pad=8)
             ax.grid(axis="x", linestyle="-", linewidth=1, color=COLOR_GRID_MAJOR, zorder=0)
         else:
-            ax.text(0.5, 0.5, "표시할 데이터가 없습니다", ha="center", va="center",
+            ax.text(0.5, 0.5, "현재 작업 중인 본선이 없습니다", ha="center", va="center",
                     transform=ax.transAxes, color=COLOR_MUTED, fontsize=13)
+            ax.set_yticks([])
+            ax.set_xticks([])
 
         for side in ("top", "right", "left"):
             ax.spines[side].set_visible(False)
@@ -823,8 +991,11 @@ class BerthMonitorApp:
                      font=(FONT, 12, "bold")).grid(row=0, column=entries[0][2], columnspan=len(entries),
                                                     sticky="nsew", pady=(6, 2))
             for _key, sub_label, col in entries:
+                # 아래 숫자와 같은 우측 정렬로 맞춘다 (가운데 정렬이면 헤더와
+                # 값이 서로 어긋나 보여 어느 열인지 눈으로 따라가기 어렵다).
                 tk.Label(parent, text=sub_label, bg=COLOR_CARD, fg=COLOR_MUTED,
-                         font=(FONT, 10)).grid(row=1, column=col, sticky="nsew", pady=(0, 12))
+                         font=(FONT, 10), anchor="e", padx=10).grid(
+                    row=1, column=col, sticky="nsew", pady=(0, 12))
 
         for dc in divider_cols:
             _divider(0, dc, COLOR_CARD, rowspan=2)
@@ -832,35 +1003,82 @@ class BerthMonitorApp:
         tk.Frame(parent, bg=COLOR_PRIMARY, height=2).grid(
             row=2, column=0, columnspan=ncols, sticky="ew")
 
+        def _bind_row_hover(cells):
+            """행 전체를 함께 밝히는 마우스오버 효과. 셀마다 원래 배경색을
+            기억해뒀다가 <Leave>에서 되돌린다."""
+            def enter(_event=None):
+                for w, _base in cells:
+                    w.config(bg=COLOR_HOVER_ROW)
+
+            def leave(_event=None):
+                for w, base in cells:
+                    w.config(bg=base)
+
+            for w, _base in cells:
+                w.bind("<Enter>", enter)
+                w.bind("<Leave>", leave)
+
         for r, (carrier, terminal) in enumerate(rows):
             d = by_key.get((carrier, terminal))
             counts = d["counts"] if d else {}
             total = d["total"] if d else 0
             bg = COLOR_CARD if r % 2 == 0 else COLOR_ROW_ALT
             grid_row = r + 3
+            cells = []
 
             label_cell = tk.Frame(parent, bg=bg)
             label_cell.grid(row=grid_row, column=LABEL_COL, sticky="nsew")
             dot = tk.Canvas(label_cell, width=8, height=8, bg=bg, highlightthickness=0)
             dot.create_oval(1, 1, 7, 7, fill=EMPTY_CARRIER_COLOR[carrier], outline="")
             dot.pack(side="left", padx=(16, 6), pady=15)
-            tk.Label(label_cell, text=f"{carrier} · {terminal}", bg=bg, fg=COLOR_TEXT,
-                     font=(FONT, 11, "bold")).pack(side="left")
+            name = tk.Label(label_cell, text=f"{carrier} · {terminal}", bg=bg, fg=COLOR_TEXT,
+                            font=(FONT, 11, "bold"))
+            name.pack(side="left")
+            cells += [(label_cell, bg), (dot, bg), (name, bg)]
 
             for _group_label, entries in group_cols:
                 for key, _sub_label, col in entries:
                     val = counts.get(key, 0)
-                    tk.Label(parent, text=str(val) if val else "–", bg=bg,
-                             fg=COLOR_TEXT if val else COLOR_MUTED, font=(FONT, 11),
-                             anchor="e", padx=10).grid(
-                        row=grid_row, column=col, sticky="nsew", pady=15)
+                    cell = tk.Label(parent, text=str(val) if val else "–", bg=bg,
+                                    fg=COLOR_TEXT if val else COLOR_MUTED, font=(FONT, 11),
+                                    anchor="e", padx=10)
+                    cell.grid(row=grid_row, column=col, sticky="nsew", pady=15)
+                    cells.append((cell, bg))
 
             for dc in divider_cols:
                 _divider(grid_row, dc, bg)
 
-            tk.Label(parent, text=str(total), bg=COLOR_PRIMARY_SOFT, fg=COLOR_PRIMARY_DARK,
-                     font=(FONT, 13, "bold"), anchor="e", justify="right").grid(
-                row=grid_row, column=total_col, sticky="nsew", padx=(0, 16), pady=15)
+            total_cell = tk.Label(parent, text=str(total), bg=COLOR_PRIMARY_SOFT,
+                                  fg=COLOR_PRIMARY_DARK, font=(FONT, 13, "bold"),
+                                  anchor="e", justify="right")
+            total_cell.grid(row=grid_row, column=total_col, sticky="nsew",
+                            padx=(0, 16), pady=15)
+            cells.append((total_cell, COLOR_PRIMARY_SOFT))
+
+            _bind_row_hover(cells)
+
+        # 마지막 합계 행: 터미널을 다 더한 값이 궁금할 때 눈으로 세지 않아도 되게.
+        sum_row = len(rows) + 3
+        tk.Frame(parent, bg=COLOR_BORDER, height=1).grid(
+            row=sum_row, column=0, columnspan=ncols, sticky="ew")
+        sum_row += 1
+
+        tk.Label(parent, text="합계", bg=COLOR_CARD, fg=COLOR_TEXT,
+                 font=(FONT, 11, "bold"), anchor="w", padx=16).grid(
+            row=sum_row, column=LABEL_COL, sticky="nsew", pady=14)
+        for _group_label, entries in group_cols:
+            for key, _sub_label, col in entries:
+                val = sum((by_key.get(rk) or {}).get("counts", {}).get(key, 0) for rk in rows)
+                tk.Label(parent, text=str(val) if val else "–", bg=COLOR_CARD,
+                         fg=COLOR_TEXT if val else COLOR_MUTED, font=(FONT, 11, "bold"),
+                         anchor="e", padx=10).grid(
+                    row=sum_row, column=col, sticky="nsew", pady=14)
+        for dc in divider_cols:
+            _divider(sum_row, dc, COLOR_CARD)
+        tk.Label(parent, text=str(sum((by_key.get(rk) or {}).get("total", 0) for rk in rows)),
+                 bg=COLOR_PRIMARY, fg="white", font=(FONT, 13, "bold"),
+                 anchor="e", justify="right").grid(
+            row=sum_row, column=total_col, sticky="nsew", padx=(0, 16), pady=14)
 
 
 def main():
