@@ -1032,7 +1032,9 @@ class BerthMonitorApp:
         w_berth = max([text_px(s, 11) for s in berth_labels] or [0])
 
         P, G = self.ROW_HDR_PAD, self.ROW_HDR_GAP
-        left_px = P + w_term + G + w_berth + G
+        sep1 = P + w_term + G / 2                    # 터미널 열 오른쪽 경계
+        sep2 = sep1 + G / 2 + w_berth + G / 2        # 선석 열 오른쪽 경계
+        left_px = sep2 + G                           # 차트가 시작되는 위치
         pos = ax.get_position()
         # 위쪽 시간 눈금은 축 바깥에 그리므로 tight_layout이 자리를 안 잡아준다.
         fig.subplots_adjust(left=left_px / fig_w,
@@ -1040,10 +1042,10 @@ class BerthMonitorApp:
         pos = ax.get_position()
 
         blend = blended_transform_factory(fig.transFigure, ax.transData)
-        x_term = P / fig_w
-        x_berth = (P + w_term + G) / fig_w
-        x_sep1 = (P + w_term + G / 2) / fig_w
-        x_sep2 = (left_px - G / 2) / fig_w
+        # 글자는 각 칸의 한가운데에 놓는다(표처럼 보이게).
+        x_term = (sep1 / 2) / fig_w
+        x_berth = ((sep1 + sep2) / 2) / fig_w
+        x_sep1, x_sep2 = sep1 / fig_w, sep2 / fig_w
         y_top = min(g[2] for g in groups)
         y_bot = max(g[3] for g in groups)
 
@@ -1054,20 +1056,20 @@ class BerthMonitorApp:
                                zorder=8, clip_on=False))
         edges = sorted({g[2] for g in groups} | {g[3] for g in groups})
         for y in edges:
-            ax.add_line(Line2D([x_term, pos.x1], [y, y], transform=blend,
+            ax.add_line(Line2D([0, pos.x1], [y, y], transform=blend,
                                color=COLOR_TABLE_LINE, linewidth=1,
                                zorder=8, clip_on=False))
 
         for term, region, g0, g1, empty in groups:
             ax.text(x_term, (g0 + g1) / 2, term, transform=blend,
-                    ha="left", va="center", fontsize=11.5,
+                    ha="center", va="center", fontsize=11.5,
                     fontweight="normal" if empty else "bold",
                     color=COLOR_MUTED if empty else REGION_COLOR.get(region, COLOR_TEXT),
                     clip_on=False, zorder=9)
         for (_region, term, berth), label in zip(rows, berth_labels):
             key = (term, berth)
             ax.text(x_berth, row_top[key] + (lane_count[key] - 1) / 2, label,
-                    transform=blend, ha="left", va="center", fontsize=11,
+                    transform=blend, ha="center", va="center", fontsize=11,
                     color=COLOR_MUTED if berth is None else COLOR_TEXT,
                     clip_on=False, zorder=9)
 
