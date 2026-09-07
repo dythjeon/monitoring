@@ -11,7 +11,9 @@ import matplotlib.font_manager as fm
 import matplotlib.ticker as mticker
 from matplotlib.figure import Figure
 from matplotlib.patches import FancyBboxPatch, Rectangle
-from matplotlib.transforms import offset_copy
+from matplotlib.font_manager import FontProperties
+from matplotlib.lines import Line2D
+from matplotlib.transforms import blended_transform_factory, offset_copy
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from scraper import (fetch_all, fetch_bptc_work_status, fetch_bptc_empty_status,
@@ -65,6 +67,7 @@ COLOR_NOW = "#ef4444"         # 간트 차트의 현재 시각 표시선
 COLOR_SAT = "#2f6fed"         # 토요일 날짜 라벨
 COLOR_SUN = "#e8474c"         # 일요일 날짜 라벨
 COLOR_HOVER_ROW = "#eef4ff"   # 표 행 마우스오버 하이라이트
+COLOR_TABLE_LINE = "#dfe3ea"  # 터미널/선석 열을 나누는 표 선
 
 
 def _hex_to_rgb(h):
@@ -714,6 +717,8 @@ class BerthMonitorApp:
         self.now_artists = {}      # tab_key -> (세로선, NOW 배지)
         self.progress_bars = {}    # tab_key -> [(막대, eta, etd, 색), ...]
         self._drawn_window_start = None
+        # tab_key -> (rows, row_top, lane_count). 그린 뒤 표 헤더를 직접 배치할 때 쓴다.
+        self._row_header = {}
 
         for key in ALL_TAB_KEYS:
             card = Card(self.chart_container, radius=18)
@@ -984,6 +989,98 @@ class BerthMonitorApp:
         self._resize_job = None
         self._render_all()
 
+    ROW_HDR_PAD = 12      # 표 왼쪽 바깥 여백(px)
+    ROW_HDR_GAP = 13      # 열 사이 간격(px)
+    HOUR_ROW_PX = 15      # 위쪽 시간 눈금이 차지할 높이(px)
+
+    def _draw_grid_header(self, tab_key, win_start):
+        """세로 라벨을 '터미널 | 선석' 두 칸으로, 가로 위쪽에 시간 눈금을 그린다.
+
+        눈금 라벨 하나로는 두 열을 만들 수 없어 직접 그린다. 실제 렌더 폭을 재서
+        왼쪽 여백을 확보한 뒤 figure 좌표(가로) + 데이터 좌표(세로) 혼합 변환으로
+        배치하므로, 글자가 길어져도 열이 서로 밀리지 않는다.
+        한 번 draw()로 renderer와 축 위치가 확정된 뒤에 호출해야 한다.
+        """
+        info = self._row_header.get(tab_key)
+        if not info:
+            return
+        rows, row_top, lane_count = info
+        ax, fig = self.axes[tab_key], self.figs[tab_key]
+        renderer = self.canvases[tab_key].get_renderer()
+        box = fig.get_window_extent()
+        fig_w, fig_h = box.width, box.height
+
+        def text_px(s, size, weight="normal"):
+            fp = FontProperties(family=FONT, size=size, weight=weight)
+            return renderer.get_text_width_height_descent(s, fp, False)[0]
+
+        # 터미널은 선석 여러 줄에 걸치는 '병합 셀'로 묶는다(rows가 이미 터미널 순).
+        groups, i = [], 0
+        while i < len(rows):
+            term = rows[i][1]
+            j = i
+            while j < len(rows) and rows[j][1] == term:
+                j += 1
+            k0, k1 = (rows[i][1], rows[i][2]), (rows[j - 1][1], rows[j - 1][2])
+            groups.append((term, rows[i][0], row_top[k0] - 0.5,
+                           row_top[k1] + lane_count[k1] - 0.5,
+                           all(r[2] is None for r in rows[i:j])))
+            i = j
+
+        berth_labels = ["—" if b is None else f"{b}선석" for _r, _t, b in rows]
+        w_term = max([text_px(g[0], 11.5, "bold") for g in groups] or [0])
+        w_berth = max([text_px(s, 11) for s in berth_labels] or [0])
+
+        P, G = self.ROW_HDR_PAD, self.ROW_HDR_GAP
+        left_px = P + w_term + G + w_berth + G
+        pos = ax.get_position()
+        # 위쪽 시간 눈금은 축 바깥에 그리므로 tight_layout이 자리를 안 잡아준다.
+        fig.subplots_adjust(left=left_px / fig_w,
+                            top=pos.y1 - self.HOUR_ROW_PX / fig_h)
+        pos = ax.get_position()
+
+        blend = blended_transform_factory(fig.transFigure, ax.transData)
+        x_term = P / fig_w
+        x_berth = (P + w_term + G) / fig_w
+        x_sep1 = (P + w_term + G / 2) / fig_w
+        x_sep2 = (left_px - G / 2) / fig_w
+        y_top = min(g[2] for g in groups)
+        y_bot = max(g[3] for g in groups)
+
+        # 열 구분선(세로 2개) + 터미널 그룹 구분선(가로)
+        for x in (x_sep1, x_sep2):
+            ax.add_line(Line2D([x, x], [y_top, y_bot], transform=blend,
+                               color=COLOR_TABLE_LINE, linewidth=1,
+                               zorder=8, clip_on=False))
+        edges = sorted({g[2] for g in groups} | {g[3] for g in groups})
+        for y in edges:
+            ax.add_line(Line2D([x_term, pos.x1], [y, y], transform=blend,
+                               color=COLOR_TABLE_LINE, linewidth=1,
+                               zorder=8, clip_on=False))
+
+        for term, region, g0, g1, empty in groups:
+            ax.text(x_term, (g0 + g1) / 2, term, transform=blend,
+                    ha="left", va="center", fontsize=11.5,
+                    fontweight="normal" if empty else "bold",
+                    color=COLOR_MUTED if empty else REGION_COLOR.get(region, COLOR_TEXT),
+                    clip_on=False, zorder=9)
+        for (_region, term, berth), label in zip(rows, berth_labels):
+            key = (term, berth)
+            ax.text(x_berth, row_top[key] + (lane_count[key] - 1) / 2, label,
+                    transform=blend, ha="left", va="center", fontsize=11,
+                    color=COLOR_MUTED if berth is None else COLOR_TEXT,
+                    clip_on=False, zorder=9)
+
+        # 위쪽 시간 눈금 — 하루 폭이 좁으면 6→12→24시간으로 간격을 넓힌다.
+        per_day = pos.width * fig_w / GANTT_WINDOW_DAYS
+        step = 6 if per_day >= 150 else (12 if per_day >= 78 else 24)
+        for day in range(GANTT_WINDOW_DAYS):
+            for hour in range(0, 24, step):
+                x = mdates.date2num(win_start + timedelta(days=day, hours=hour))
+                ax.text(x, 1.0, "%02d" % hour, transform=ax.get_xaxis_transform(),
+                        ha="center", va="bottom", fontsize=8.5, color=COLOR_MUTED,
+                        clip_on=False, zorder=9)
+
     def _draw_gantt(self, tab_key, data):
         ax = self.axes[tab_key]
         fig = self.figs[tab_key]
@@ -1125,17 +1222,11 @@ class BerthMonitorApp:
 
         if rows:
             # 라벨은 레인이 여러 개여도 그 선석 구간의 한가운데에 하나만 둔다.
-            ax.set_yticks([row_top[k] + (lane_count[k] - 1) / 2 for k in row_keys])
-            ax.set_yticklabels([t if b is None else f"{t} {b}선석" for _, t, b in rows],
-                                fontsize=12, fontweight="bold")
-            # 선석 라벨을 항구 색으로 칠해 "전체" 탭에서도 어느 항인지 바로 보이게 한다.
-            # 접안 예정이 없는 터미널은 회색으로 눕혀 두어 한눈에 구분되게 한다.
-            for label, (region, _t, berth) in zip(ax.get_yticklabels(), rows):
-                if berth is None:
-                    label.set_color(COLOR_MUTED)
-                    label.set_fontweight("normal")
-                else:
-                    label.set_color(REGION_COLOR.get(region, COLOR_TEXT))
+            # 세로 라벨은 "터미널 | 선석" 두 칸으로 나눠 그린다. 눈금 라벨 하나로는
+            # 두 열을 만들 수 없어서, 한 번 그린 뒤 실제 글자 폭을 재서 왼쪽 여백을
+            # 확보하고 직접 배치한다(_draw_grid_header). 여기서는 자리만 비워둔다.
+            ax.set_yticks([])
+            self._row_header[tab_key] = (rows, dict(row_top), dict(lane_count))
             # 선석이 한두 개뿐인 탭(광양 등)에서 막대가 화면 높이만큼 두꺼워지지
             # 않도록, 최소 행 수 기준으로 남는 만큼을 위아래에 나눠 비워둔다.
             # 기준은 선석 수가 아니라 레인 합계 — 서브레인이 생기면 그만큼 칸이 는다.
@@ -1187,6 +1278,7 @@ class BerthMonitorApp:
         else:
             self.now_artists.pop(tab_key, None)
             self.progress_bars.pop(tab_key, None)
+            self._row_header.pop(tab_key, None)
             ax.text(0.5, 0.5, "이 기간에 예정된 선박이 없습니다", ha="center", va="center",
                     transform=ax.transAxes, color=COLOR_MUTED, fontsize=13)
             ax.set_yticks([])
@@ -1216,6 +1308,9 @@ class BerthMonitorApp:
         ax.spines["bottom"].set_color(COLOR_BORDER)
         ax.tick_params(axis="y", length=0)
         fig.tight_layout()
+        canvas.draw()
+        # 표 헤더가 왼쪽/위 여백을 바꾸므로, 막대 픽셀을 재기 전에 먼저 확정한다.
+        self._draw_grid_header(tab_key, win_start)
         canvas.draw()
 
         # 모서리 반경과 라벨 말줄임은 한 번 그린 뒤에 한다. 그래야 renderer와
