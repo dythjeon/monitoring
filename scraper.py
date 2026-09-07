@@ -6,7 +6,12 @@ SOURCES 리스트에 등록하면 GUI가 자동으로 합쳐서 보여줍니다.
 SOURCES 리스트에 이름과 함께 등록하세요.
 """
 
+import io
+import os
 import re
+import tempfile
+
+import certifi
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
@@ -412,6 +417,74 @@ def fetch_snct(line_code="KHP"):
     return rows
 
 
+# --------------------------------------------------------------------------
+# E1CT 는 2026-09 경 HTTPS 로 전환(http 요청은 301 리다이렉트)했는데, 서버가
+# 중간 인증서를 함께 보내지 않는다. 브라우저는 AIA 로 알아서 받아오지만
+# requests/OpenSSL 은 그러지 않아 "unable to get local issuer certificate" 로
+# 검증이 실패한다. 그래서 발급자인 Sectigo 중간 인증서를 certifi 번들 뒤에
+# 붙여서 쓴다 — verify=False 로 검증을 끄지 않기 위한 조치다.
+#
+# 이 인증서 유효기간: ~2036-03-21. 언젠가 E1CT 가 CA 를 바꾸면 다시 실패하는데,
+# 그때는 http://crt.sectigo.com/... (leaf 인증서의 AIA 필드에 적힌 주소)에서
+# 새 중간 인증서를 받아 아래 문자열만 교체하면 된다.
+E1CT_INTERMEDIATE_PEM = """-----BEGIN CERTIFICATE-----
+MIIGTDCCBDSgAwIBAgIQLBo8dulD3d3/GRsxiQrtcTANBgkqhkiG9w0BAQwFADBf
+MQswCQYDVQQGEwJHQjEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMTYwNAYDVQQD
+Ey1TZWN0aWdvIFB1YmxpYyBTZXJ2ZXIgQXV0aGVudGljYXRpb24gUm9vdCBSNDYw
+HhcNMjEwMzIyMDAwMDAwWhcNMzYwMzIxMjM1OTU5WjBgMQswCQYDVQQGEwJHQjEY
+MBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMTcwNQYDVQQDEy5TZWN0aWdvIFB1Ymxp
+YyBTZXJ2ZXIgQXV0aGVudGljYXRpb24gQ0EgT1YgUjM2MIIBojANBgkqhkiG9w0B
+AQEFAAOCAY8AMIIBigKCAYEApkMtJ3R06jo0fceI0M52B7K+TyMeGcv2BQ5AVc3j
+lYt76TvHIu/nNe22W/RJXX9rWUD/2GE6GF5x0V4bsY7K3IeJ8E7+KzG/TGboySfD
+u+F52jqQBbY62ofhYjMeiAbLI02+FqwHeM8uIrUtcX8b2RCxF358TB0NHVccAXZc
+FYgZndZCeXxjuca7pJJ20LLUnXtgXcjAE1vY4WvbReW0W6mkeZyNGdmpTcFs5Y+s
+yy6LtE5Zocji9J9NlNnReox2RWVyEXpA1ChZ4gqN+ZpVSIQ0HBorVFbBKyhdZyEX
+gZgNSNtBRwxqwIzJePJhYd4ZUhO1vk+/uP3nwDk0p95q/j7naXNCSvESnrHPypaB
+WRK066nKfPRPi9m9kIOhMdYfS8giFRTcdgL24Ycilj7ecAK9Trh0VbjwouJ4WH+x
+bt47u68ZFCD/ac55I0DNHkCpaPruj6e9Rmr7K46wZDAYXuEAqB7tGG/jd6JAA+H2
+O44CV98NRsU213f1kScIZntNAgMBAAGjggGBMIIBfTAfBgNVHSMEGDAWgBRWc1hk
+lfmSGrASKgRieaFAFYghSTAdBgNVHQ4EFgQU42Z0u3BojSxdTg6mSo+bNyKcgpIw
+DgYDVR0PAQH/BAQDAgGGMBIGA1UdEwEB/wQIMAYBAf8CAQAwHQYDVR0lBBYwFAYI
+KwYBBQUHAwEGCCsGAQUFBwMCMBsGA1UdIAQUMBIwBgYEVR0gADAIBgZngQwBAgIw
+VAYDVR0fBE0wSzBJoEegRYZDaHR0cDovL2NybC5zZWN0aWdvLmNvbS9TZWN0aWdv
+UHVibGljU2VydmVyQXV0aGVudGljYXRpb25Sb290UjQ2LmNybDCBhAYIKwYBBQUH
+AQEEeDB2ME8GCCsGAQUFBzAChkNodHRwOi8vY3J0LnNlY3RpZ28uY29tL1NlY3Rp
+Z29QdWJsaWNTZXJ2ZXJBdXRoZW50aWNhdGlvblJvb3RSNDYucDdjMCMGCCsGAQUF
+BzABhhdodHRwOi8vb2NzcC5zZWN0aWdvLmNvbTANBgkqhkiG9w0BAQwFAAOCAgEA
+BZXWDHWC3cubb/e1I1kzi8lPFiK/ZUoH09ufmVOrc5ObYH/XKkWUexSPqRkwKFKr
+7r8OuG+p7VNB8rifX6uopqKAgsvZtZsq7iAFw04To6vNcxeBt1Eush3cQ4b8nbQR
+MQLChgEAqwhuXp9P48T4QEBSksYav7+aFjNySsLYlPzNqVM3RNwvBdvp6vgDtGwc
+xlKQZVuuNVIaoYyls8swhxDeSHKpRdxRauTLZ+pl+wGvy0pnrLEJGSz9mOEmfbod
+e/XopR2NGqaHJ6bIjyxPu6UtyQGI26En7UAEozACrHz06Nx2jTAY9E6NeB6XuobE
+wLK025ZRmvglcURG1BrV24tGHHTgxCe8M3oGlpUSMTKQ2dkgljZVYt+gKdFtWELZ
+MuRdi+X3XsrR8LFz+aLUiDRfQqhmw3RxjIyVKvvu9UPYY1nsvxYmFnUSeM+2q1z/
+iPUry+xDY9MC6+IhleKT094VKdFVp7LXH42+wvU+17lRolQ2mK2N/nBLVBwaIhib
+QXw4VYKwB86Bc6eS6iqsc94KEgD/U4VsjmgfhK+Xp4NM+VYzTTa3QeV3p8xOM0cw
+q1p8oZFA+OBcz3FYWpDIe5j0NWKlw9hXsTyPY/HeZUV59akskSOSRSmDfe8wJDPX
+58uB9/7lud0G3x0pxQAcffP0ayKavNwDTw4UfJ34cEw=
+-----END CERTIFICATE-----
+"""
+
+_E1CT_CA_BUNDLE = None
+
+
+def _e1ct_ca_bundle():
+    """certifi 기본 번들 + E1CT 중간 인증서를 합친 임시 파일 경로를 돌려준다."""
+    global _E1CT_CA_BUNDLE
+    if _E1CT_CA_BUNDLE and os.path.exists(_E1CT_CA_BUNDLE):
+        return _E1CT_CA_BUNDLE
+    try:
+        path = os.path.join(tempfile.gettempdir(), "berthmonitor_e1ct_ca.pem")
+        with io.open(certifi.where(), encoding="ascii") as f:
+            base = f.read()
+        with io.open(path, "w", encoding="ascii") as f:
+            f.write(base.rstrip() + "\n" + E1CT_INTERMEDIATE_PEM)
+        _E1CT_CA_BUNDLE = path
+        return path
+    except OSError:
+        return certifi.where()      # 임시파일을 못 쓰면 기본 검증으로 되돌린다
+
+
 def fetch_e1ct():
     """E1CT(인천 E1컨테이너터미널) 선석배정현황(T)을 가져온다.
 
@@ -423,8 +496,9 @@ def fetch_e1ct():
     직접 정규식으로 셀을 분리한다.
     반환: [{terminal, berth, voyage, ship_name, line, eta, etd}, ...]
     """
-    url = "http://www.e1ct.co.kr/info/terminal/berthText"
-    resp = requests.get(url, headers=HEADERS, timeout=15)
+    url = "https://www.e1ct.co.kr/info/terminal/berthText"
+    resp = requests.get(url, headers=HEADERS, timeout=15,
+                        verify=_e1ct_ca_bundle())
     resp.raise_for_status()
     resp.encoding = resp.apparent_encoding or "utf-8"
 
@@ -473,8 +547,9 @@ def fetch_e1ct_empty_status(carrier_code="DYS"):
     fetch_bptc_empty_status()와 같은 모양으로 반환해 공컨현황 표에
     그대로 이어붙일 수 있게 한다.
     """
-    url = "http://www.e1ct.co.kr/info/terminal/emptyContainer"
-    resp = requests.get(url, headers=HEADERS, timeout=15)
+    url = "https://www.e1ct.co.kr/info/terminal/emptyContainer"
+    resp = requests.get(url, headers=HEADERS, timeout=15,
+                        verify=_e1ct_ca_bundle())
     resp.raise_for_status()
     resp.encoding = resp.apparent_encoding or "utf-8"
 
@@ -666,19 +741,31 @@ SOURCES = [
 
 
 def fetch_all():
-    """등록된 모든 소스를 크롤링해서 하나의 리스트로 합친다."""
+    """등록된 모든 소스를 크롤링해서 하나의 리스트로 합친다.
+
+    반환: (전체 행, 오류 문구 목록, [(소스 이름, 수집 건수), ...])
+
+    소스별 건수를 같이 돌려주는 이유: "조회는 정상인데 해당 선박이 0건"과
+    "조회 자체가 실패"가 화면에서는 똑같이 '아무것도 안 보임'으로 나타나
+    구분할 방법이 없다. 실패한 소스는 건수를 None으로 준다.
+    """
     all_rows = []
     errors = []
+    stats = []
     for name, fn in SOURCES:
         try:
-            all_rows.extend(fn())
+            rows = fn()
         except Exception as e:  # 한 사이트가 실패해도 나머지는 계속 진행
             errors.append(f"{name}: {e}")
-    return all_rows, errors
+            stats.append((name, None))
+            continue
+        all_rows.extend(rows)
+        stats.append((name, len(rows)))
+    return all_rows, errors, stats
 
 
 if __name__ == "__main__":
-    data, errors = fetch_all()
+    data, errors, _stats = fetch_all()
     print(f"총 {len(data)}건 수집")
     for d in data[:5]:
         print(d)

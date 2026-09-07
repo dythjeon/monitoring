@@ -892,9 +892,9 @@ class BerthMonitorApp:
 
     def _fetch_and_draw(self):
         try:
-            data, errors = fetch_all()
+            data, errors, stats = fetch_all()
         except Exception as e:
-            data, errors = [], [str(e)]
+            data, errors, stats = [], [str(e)], []
         try:
             work_data = fetch_bptc_work_status()
         except Exception as e:
@@ -917,18 +917,23 @@ class BerthMonitorApp:
             empty_data = empty_data + fetch_hjit_empty_status()
         except Exception as e:
             errors = list(errors) + [f"국내공컨현황(HJIT): {e}"]
-        self.root.after(0, lambda: self._on_data(data, errors, work_data, empty_data))
+        self.root.after(0, lambda: self._on_data(data, errors, work_data, empty_data, stats))
 
-    def _on_data(self, data, errors, work_data, empty_data):
+    def _on_data(self, data, errors, work_data, empty_data, stats=()):
         self.spinner.stop()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         msg = f"마지막 갱신 {now}"
+        if stats:
+            # "조회 5/6"처럼 몇 곳을 실제로 읽었는지 항상 보여준다. 이게 없으면
+            # 화면에 안 보이는 소스가 고장난 건지 해당 선박이 없는 건지 알 수 없다.
+            ok = sum(1 for _n, c in stats if c is not None)
+            msg += f"  ·  조회 {ok}/{len(stats)}"
         if errors:
             # 오류 문구를 그대로 붙이면 한 줄이 창 밖까지 늘어나 헤더 레이아웃을
             # 밀어버린다. 건수만 알리고 상세는 툴팁으로 넘긴다.
             msg += f"  ·  오류 {len(errors)}건"
         self.status_label.config(text=msg, fg=COLOR_NOW if errors else COLOR_MUTED)
-        self._status_detail = "\n".join(errors) if errors else ""
+        self._status_detail = _source_report(stats, errors)
 
         # 통계 카드는 간트 차트와 같은 "지금 ~ 지금+7일" 창으로 집계해야
         # 숫자가 일치한다. 소스마다 조회 기간이 제각각이라(HJIT 14일치,
