@@ -38,6 +38,15 @@ NOW_TICK_SEC = 60            # 현재 시각선은 데이터와 별개로 1분�
 GANTT_WINDOW_DAYS = 7        # 간트 차트에 표시할 최대 기간(고정값)
 MIN_GANTT_ROWS = 5           # 행이 이보다 적어도 막대 두께는 이 기준으로 유지
 
+# 간트 세로 순서는 항상 이 순서로 고정한다. 그날 접안 예정이 없는 터미널도
+# 자리를 비워 두고 이름은 남겨야, 매번 같은 위치에서 눈으로 찾을 수 있다.
+# (감만은 신선대와 같은 BPTC 소스라 바로 뒤에 붙인다.)
+TERMINAL_ORDER = ["신선대", "감만", "허치슨", "광양서부", "E1CT", "한진신항", "선광신항"]
+# 데이터가 아예 없는 터미널은 지역을 알 수 없으므로 여기서 정해 준다.
+TERMINAL_REGION = {"신선대": "부산", "감만": "부산", "허치슨": "부산",
+                   "광양서부": "광양",
+                   "E1CT": "인천", "한진신항": "인천", "선광신항": "인천"}
+
 # ---- surff.kr 느낌의 라이트/미니멀 팔레트 ----
 COLOR_BG = "#f4f5f8"          # 페이지 배경 (아주 옅은 회색)
 COLOR_CARD = "#ffffff"        # 카드 배경
@@ -993,17 +1002,36 @@ class BerthMonitorApp:
         win_end_num = mdates.date2num(win_end)
 
         usable = [d for d in data if _in_window(d, win_start, win_end)]
-        rows = sorted({(d["region"], d["terminal"], d["berth"]) for d in usable})
+
+        # 행은 데이터에 있는 것만 만들지 않고 TERMINAL_ORDER 를 그대로 깐다.
+        # 접안 예정이 없는 터미널도 이름만 남긴 빈 행으로 자리를 지켜야,
+        # "오늘은 안 보이네"가 아니라 "여기는 지금 없구나"로 읽힌다.
+        present = {}
+        for d in usable:
+            present.setdefault(d["terminal"], set()).add(d["berth"])
+        known = set(TERMINAL_ORDER)
+        extra = sorted({d["terminal"] for d in usable} - known)   # 목록에 없던 터미널
+        rows = []
+        for term in TERMINAL_ORDER + extra:
+            region = TERMINAL_REGION.get(term) or next(
+                (d["region"] for d in usable if d["terminal"] == term), "")
+            if tab_key in TAB_KEYS[1:] and region != tab_key:
+                continue                       # 지역 탭에는 그 지역 터미널만
+            berths = sorted(present.get(term, ()))
+            if berths:
+                rows.extend((region, term, b) for b in berths)
+            else:
+                rows.append((region, term, None))   # 자리만 지키는 빈 행
 
         # 같은 선석에 작업시간이 겹치는 선박이 들어오는 일이 실제로 있다(같은 선석
         # 안에서 접안 위치를 나눠 쓰는 경우). 한 줄에 겹쳐 그리면 막대와 라벨이
         # 서로 뭉개지므로, 겹치는 것끼리 서브레인으로 나눠 세로로 쌓는다.
         # 구간 분할(interval partitioning)이라 레인 수는 "동시에 겹치는 최대 척수"가 된다.
         lane_of = {}                     # id(항목) -> 레인 번호
-        lane_count = {}                  # 선석 -> 레인 수
-        for key in rows:
-            items = sorted((d for d in usable
-                            if (d["region"], d["terminal"], d["berth"]) == key),
+        lane_count = {}                  # (터미널, 선석) -> 레인 수
+        row_keys = [(t, b) for _r, t, b in rows]
+        for key in row_keys:
+            items = sorted((d for d in usable if (d["terminal"], d["berth"]) == key),
                            key=lambda d: (d["eta"], d["etd"]))
             lane_end = []                # 레인별 마지막 etd
             for d in items:
@@ -1020,15 +1048,15 @@ class BerthMonitorApp:
         # 레인 1개를 y 1칸으로 두고, 선석마다 필요한 만큼 칸을 차지하게 쌓는다.
         row_top = {}
         cursor = 0
-        for key in rows:
+        for key in row_keys:
             row_top[key] = cursor
             cursor += lane_count[key]
         total_units = cursor
         self.row_counts[tab_key] = len(rows)
-        self.row_bands[tab_key] = [(row_top[k], lane_count[k]) for k in rows]
+        self.row_bands[tab_key] = [(row_top[k], lane_count[k]) for k in row_keys]
 
         # 배경 줄무늬는 레인이 아니라 선석 단위로 번갈아 칠해야 구분이 된다.
-        for i, key in enumerate(rows):
+        for i, key in enumerate(row_keys):
             if i % 2 == 1:
                 ax.axhspan(row_top[key] - 0.5, row_top[key] + lane_count[key] - 0.5,
                            color=COLOR_ROW_ALT, zorder=0)
@@ -1044,7 +1072,7 @@ class BerthMonitorApp:
         dot_trans = offset_copy(ax.transData, fig=fig, x=DOT_INSET_PT, y=0, units="points")
 
         for d in usable:
-            y = row_top[(d["region"], d["terminal"], d["berth"])] + lane_of[id(d)]
+            y = row_top[(d["terminal"], d["berth"])] + lane_of[id(d)]
             start = max(mdates.date2num(d["eta"]), win_start_num)
             end = min(mdates.date2num(d["etd"]), win_end_num)
             width = max(end - start, 0.01)
@@ -1097,12 +1125,17 @@ class BerthMonitorApp:
 
         if rows:
             # 라벨은 레인이 여러 개여도 그 선석 구간의 한가운데에 하나만 둔다.
-            ax.set_yticks([row_top[k] + (lane_count[k] - 1) / 2 for k in rows])
-            ax.set_yticklabels([f"{t} {b}선석" for _, t, b in rows],
+            ax.set_yticks([row_top[k] + (lane_count[k] - 1) / 2 for k in row_keys])
+            ax.set_yticklabels([t if b is None else f"{t} {b}선석" for _, t, b in rows],
                                 fontsize=12, fontweight="bold")
             # 선석 라벨을 항구 색으로 칠해 "전체" 탭에서도 어느 항인지 바로 보이게 한다.
-            for label, (region, _t, _b) in zip(ax.get_yticklabels(), rows):
-                label.set_color(REGION_COLOR.get(region, COLOR_TEXT))
+            # 접안 예정이 없는 터미널은 회색으로 눕혀 두어 한눈에 구분되게 한다.
+            for label, (region, _t, berth) in zip(ax.get_yticklabels(), rows):
+                if berth is None:
+                    label.set_color(COLOR_MUTED)
+                    label.set_fontweight("normal")
+                else:
+                    label.set_color(REGION_COLOR.get(region, COLOR_TEXT))
             # 선석이 한두 개뿐인 탭(광양 등)에서 막대가 화면 높이만큼 두꺼워지지
             # 않도록, 최소 행 수 기준으로 남는 만큼을 위아래에 나눠 비워둔다.
             # 기준은 선석 수가 아니라 레인 합계 — 서브레인이 생기면 그만큼 칸이 는다.
@@ -1160,17 +1193,17 @@ class BerthMonitorApp:
 
         # 표시 구간(7일) 밖이라 안 그려진 소스는 "원래 없는 것"과 구분이 안 된다.
         # 이 탭 데이터엔 있는데 구간 안에 하나도 없는 소스만 골라 다음 입항을 적어준다.
-        shown = {d.get("source") for d in usable}
+        shown = {d["terminal"] for d in usable}
         upcoming = {}
         for d in data:
-            src = d.get("source")
-            if src in shown or not d.get("eta") or d["eta"] <= win_end:
+            term = d.get("terminal")
+            if term in shown or not d.get("eta") or d["eta"] <= win_end:
                 continue
-            if src not in upcoming or d["eta"] < upcoming[src]["eta"]:
-                upcoming[src] = d
+            if term not in upcoming or d["eta"] < upcoming[term]["eta"]:
+                upcoming[term] = d
         if upcoming:
             picks = sorted(upcoming.values(), key=lambda d: d["eta"])
-            parts = [f"{d['source']} {d['eta'].month}/{d['eta'].day} {d['ship_name']}"
+            parts = [f"{d['terminal']} {d['eta'].month}/{d['eta'].day} {d['ship_name']}"
                      for d in picks[:2]]
             if len(picks) > 2:
                 parts.append(f"외 {len(picks) - 2}곳")

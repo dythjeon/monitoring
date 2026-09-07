@@ -225,7 +225,7 @@ def fetch_hjit(period_days=14, base_date=None):
         rows.append({
             "source": "HJIT",
             "region": "인천",
-            "terminal": "HJIT",
+            "terminal": "한진신항",
             "berth": berth,
             "voyage": voyage,
             "ship_name": ship_name,
@@ -289,7 +289,7 @@ def fetch_gwct(time_range="week"):
         rows.append({
             "source": "GWCT",
             "region": "광양",
-            "terminal": "GWCT",
+            "terminal": "광양서부",
             "berth": berth,
             "voyage": voyage,
             "ship_name": ship_name,
@@ -405,7 +405,7 @@ def fetch_snct(line_code="KHP"):
             rows.append({
                 "source": "SNCT",
                 "region": "인천",
-                "terminal": "SNCT",
+                "terminal": "선광신항",
                 "berth": berth,
                 "voyage": voyage,
                 "ship_name": ship_name,
@@ -598,7 +598,7 @@ def fetch_hjit_empty_status(carrier_code="DYS"):
         }
         return [{
             "carrier": carrier_code.upper(),
-            "terminal": "HJIT",
+            "terminal": "한진신항",
             "counts": counts,
             "total": sum(counts.values()),
         }]
@@ -668,7 +668,7 @@ def fetch_hpnt():
             rows.append({
                 "source": "HPNT",
                 "region": "부산",
-                "terminal": "HPNT",
+                "terminal": "허치슨",
                 "berth": berth,
                 "voyage": f"{voyage_code} {inout_voy}".strip(),
                 "ship_name": ship_name,
@@ -732,11 +732,11 @@ def fetch_bptc_empty_status(carrier_codes=BPTC_EMPTY_CARRIER_CODES):
 # 여기에 사이트를 추가로 등록하세요. (이름, 함수)
 SOURCES = [
     ("BPTC (신선대/감만)", fetch_bptc),
-    ("HPNT (부산항허치슨터미널)", fetch_hpnt),
-    ("HJIT (한진인천컨테이너터미널)", fetch_hjit),
-    ("SNCT (선광신컨테이너터미널)", fetch_snct),
+    ("허치슨 (부산항 허치슨터미널·자성대/감만)", fetch_hpnt),
+    ("한진신항 (한진인천컨테이너터미널)", fetch_hjit),
+    ("선광신항 (선광신컨테이너터미널)", fetch_snct),
     ("E1CT (E1컨테이너터미널)", fetch_e1ct),
-    ("GWCT (광양항서부컨테이너터미널)", fetch_gwct),
+    ("광양서부 (광양항서부컨테이너터미널)", fetch_gwct),
 ]
 
 
