@@ -195,7 +195,29 @@ def _shorten(line, ratio):
     return core[:keep] + "…"
 
 
-def _fit_bar_labels(name_txt, code_txt, max_px, renderer):
+def _source_report(stats, errors):
+    """상태 라벨 툴팁에 넣을 소스별 조회 결과.
+
+    0건인 소스를 목록에 남겨두는 게 핵심이다. 정상 조회했지만 우리 선박이
+    없었다는 사실이 어디에도 안 남으면, 화면에 안 보이는 게 고장 때문인지
+    원래 없어서인지 구분할 수 없다.
+    """
+    lines = []
+    for name, count in stats or ():
+        if count is None:
+            lines.append(f"{name}  ·  조회 실패")
+        elif count == 0:
+            lines.append(f"{name}  ·  0건 (해당 선박 없음)")
+        else:
+            lines.append(f"{name}  ·  {count}건")
+    if errors:
+        if lines:
+            lines.append("")
+        lines.extend(errors)
+    return "\n".join(lines)
+
+
+def _fit_bar_labels(name_txt, code_txt, max_px, renderer, max_h_px=None):
     """막대 밖으로 삐져나오는 라벨을 실제 렌더 폭 기준으로 줄인다.
 
     폰트 폭을 글자 수로 추정하면 한글/영문·굵기에 따라 빗나가서 글자가 잘린
@@ -209,10 +231,30 @@ def _fit_bar_labels(name_txt, code_txt, max_px, renderer):
     def fits(artist):
         return artist.get_window_extent(renderer).width <= max_px
 
-    if code_txt is not None and (max_px <= 0 or not fits(code_txt) or not fits(name_txt)):
-        code_txt.set_visible(False)
-        name_txt.set_verticalalignment("center")
-        name_txt.xyann = (name_txt.xyann[0], 0)
+    def fits_height(*artists):
+        # 같은 선석에 겹치는 선박이 있으면 막대가 레인으로 나뉘어 얇아진다.
+        # 폭은 넉넉해도 높이가 모자라 두 줄이 막대 밖으로 새는 경우가 생긴다.
+        if max_h_px is None:
+            return True
+        need = sum(a.get_window_extent(renderer).height for a in artists if a is not None)
+        return need <= max_h_px
+
+    if code_txt is not None:
+        drop = max_px <= 0 or not fits(code_txt) or not fits(name_txt)
+        if not drop and not fits_height(name_txt, code_txt):
+            # 폭은 되는데 높이만 모자란 경우다. 항차를 통째로 버리기 전에 글자를
+            # 한 단계 줄여서 두 줄을 살려 본다.
+            name_txt.set_fontsize(9.5)
+            code_txt.set_fontsize(7.5)
+            drop = not fits_height(name_txt, code_txt) or not fits(name_txt) or not fits(code_txt)
+        if drop:
+            code_txt.set_visible(False)
+            name_txt.set_verticalalignment("center")
+            name_txt.xyann = (name_txt.xyann[0], 0)
+
+    # 한 줄로 줄여도 높이가 모자라면 글자 크기를 한 단계 낮춘다.
+    if not fits_height(name_txt):
+        name_txt.set_fontsize(9.5)
 
     if max_px <= 0:
         name_txt.set_text("")
@@ -653,6 +695,14 @@ class BerthMonitorApp:
         self.hover_annot = {}     # tab_key -> 현재 활성 annotation (ax.clear()마다 새로 만들어짐)
         self.row_highlight = {}   # tab_key -> 마우스 올린 행을 덮는 사각형
         self.row_counts = {}      # tab_key -> 현재 그려진 행 수
+        # tab_key -> [(첫 레인 y, 레인 수), ...] — 선석 하나가 여러 줄을 차지할 수
+        # 있으므로 행 강조 띠는 행 개수가 아니라 이 구간표를 보고 그린다.
+        self.row_bands = {}
+        # 현재 시각선은 데이터 갱신(30분)과 무관하게 1분마다 따로 움직여야 한다.
+        # 그리기 결과를 붙잡아 뒀다가 _tick_now()가 위치만 바꾼다.
+        self.now_artists = {}      # tab_key -> (세로선, NOW 배지)
+        self.progress_bars = {}    # tab_key -> [(막대, eta, etd, 색), ...]
+        self._drawn_window_start = None
 
         for key in ALL_TAB_KEYS:
             card = Card(self.chart_container, radius=18)
@@ -676,6 +726,7 @@ class BerthMonitorApp:
             self.hover_annot[key] = None
             self.row_highlight[key] = None
             self.row_counts[key] = 0
+            self.row_bands[key] = []
 
             canvas.mpl_connect("motion_notify_event", lambda event, k=key: self._on_hover(k, event))
             canvas.mpl_connect("figure_leave_event", lambda event, k=key: self._hide_hover(k))
@@ -743,16 +794,23 @@ class BerthMonitorApp:
         highlight = self.row_highlight.get(tab_key)
         if highlight is None:
             return False
-        row = round(event.ydata) if event.ydata is not None else -1
-        inside = 0 <= row < self.row_counts.get(tab_key, 0)
-        if not inside:
+        band = None
+        if event.ydata is not None:
+            for top, lanes in self.row_bands.get(tab_key, ()):
+                if top - 0.5 <= event.ydata <= top + lanes - 0.5:
+                    band = (top, lanes)
+                    break
+        if band is None:
             if highlight.get_visible():
                 highlight.set_visible(False)
                 return True
             return False
-        if highlight.get_visible() and highlight.get_y() == row - 0.5:
+        top, lanes = band
+        if (highlight.get_visible() and highlight.get_y() == top - 0.5
+                and highlight.get_height() == lanes):
             return False
-        highlight.set_y(row - 0.5)
+        highlight.set_y(top - 0.5)
+        highlight.set_height(lanes)     # 레인이 여러 개면 선석 전체를 덮는다
         highlight.set_visible(True)
         return True
 
@@ -784,6 +842,46 @@ class BerthMonitorApp:
     def _auto_refresh(self):
         self.refresh()
         self._schedule_auto_refresh()
+
+    # ---------- 현재 시각선 ----------
+
+    def _schedule_now_tick(self):
+        self.root.after(NOW_TICK_SEC * 1000, self._tick_now)
+
+    def _tick_now(self):
+        try:
+            self._update_now_marker()
+        finally:
+            self._schedule_now_tick()
+
+    def _update_now_marker(self):
+        """빨간 현재 시각선을 데이터 재조회 없이 지금 시각으로 옮긴다.
+
+        선 위치만 바꾸는 게 아니라 "지금 접안 중" 테두리 강조도 같이 다시
+        판정한다. 둘 다 같은 now를 기준으로 하므로 한쪽만 갱신하면 어긋난다.
+        """
+        if not self.now_artists:
+            return
+        now = datetime.now()
+        win_start, _ = _gantt_window()
+        if self._drawn_window_start is not None and win_start != self._drawn_window_start:
+            # 자정을 넘겨 표시 구간(오늘 00:00~+7일) 자체가 바뀌었다. 선만
+            # 옮기면 날짜 눈금과 어긋나므로 통째로 다시 그린다.
+            if self._last_draw is not None:
+                self._render_all()
+            return
+
+        now_num = mdates.date2num(now)
+        stamp = now.strftime("%H:%M")
+        for key, (vline, badge) in self.now_artists.items():
+            vline.set_xdata([now_num, now_num])
+            badge.xy = (now_num, 1)
+            badge.set_text(f"NOW {stamp}")
+            for patch, eta, etd, color in self.progress_bars.get(key, ()):
+                live = eta <= now <= etd
+                patch.set_edgecolor(_blend(color, "#000000", 0.3) if live else COLOR_CARD)
+                patch.set_linewidth(2 if live else 1.2)
+            self.canvases[key].draw_idle()
 
     def refresh(self):
         self.status_label.config(text="불러오는 중...")
@@ -889,23 +987,57 @@ class BerthMonitorApp:
 
         usable = [d for d in data if _in_window(d, win_start, win_end)]
         rows = sorted({(d["region"], d["terminal"], d["berth"]) for d in usable})
-        row_index = {key: i for i, key in enumerate(rows)}
-        self.row_counts[tab_key] = len(rows)
 
-        for i in range(len(rows)):
+        # 같은 선석에 작업시간이 겹치는 선박이 들어오는 일이 실제로 있다(같은 선석
+        # 안에서 접안 위치를 나눠 쓰는 경우). 한 줄에 겹쳐 그리면 막대와 라벨이
+        # 서로 뭉개지므로, 겹치는 것끼리 서브레인으로 나눠 세로로 쌓는다.
+        # 구간 분할(interval partitioning)이라 레인 수는 "동시에 겹치는 최대 척수"가 된다.
+        lane_of = {}                     # id(항목) -> 레인 번호
+        lane_count = {}                  # 선석 -> 레인 수
+        for key in rows:
+            items = sorted((d for d in usable
+                            if (d["region"], d["terminal"], d["berth"]) == key),
+                           key=lambda d: (d["eta"], d["etd"]))
+            lane_end = []                # 레인별 마지막 etd
+            for d in items:
+                for j, end in enumerate(lane_end):
+                    if d["eta"] >= end:
+                        lane_of[id(d)] = j
+                        lane_end[j] = d["etd"]
+                        break
+                else:
+                    lane_of[id(d)] = len(lane_end)
+                    lane_end.append(d["etd"])
+            lane_count[key] = max(len(lane_end), 1)
+
+        # 레인 1개를 y 1칸으로 두고, 선석마다 필요한 만큼 칸을 차지하게 쌓는다.
+        row_top = {}
+        cursor = 0
+        for key in rows:
+            row_top[key] = cursor
+            cursor += lane_count[key]
+        total_units = cursor
+        self.row_counts[tab_key] = len(rows)
+        self.row_bands[tab_key] = [(row_top[k], lane_count[k]) for k in rows]
+
+        # 배경 줄무늬는 레인이 아니라 선석 단위로 번갈아 칠해야 구분이 된다.
+        for i, key in enumerate(rows):
             if i % 2 == 1:
-                ax.axhspan(i - 0.5, i + 0.5, color=COLOR_ROW_ALT, zorder=0)
+                ax.axhspan(row_top[key] - 0.5, row_top[key] + lane_count[key] - 0.5,
+                           color=COLOR_ROW_ALT, zorder=0)
 
         span = win_end_num - win_start_num
         # 라벨 말줄임과 모서리 반경은 그린 뒤에 실제 픽셀을 재서 처리한다(아래 참고).
         pending = []   # [(name 아티스트, code 아티스트, 점 아티스트, 좌, 우), ...]
         bars = []
+        live_bars = []          # 1분마다 접안 중 판정을 다시 하기 위해 붙잡아 둔다
+        self._drawn_window_start = win_start
         # 행선지 점은 막대 왼쪽 끝에서 일정 '포인트'만큼 안쪽에 찍는다. 데이터
         # 좌표로 잡으면 창 크기에 따라 위치가 흔들려서 offset 변환을 쓴다.
         dot_trans = offset_copy(ax.transData, fig=fig, x=DOT_INSET_PT, y=0, units="points")
 
         for d in usable:
-            y = row_index[(d["region"], d["terminal"], d["berth"])]
+            y = row_top[(d["region"], d["terminal"], d["berth"])] + lane_of[id(d)]
             start = max(mdates.date2num(d["eta"]), win_start_num)
             end = min(mdates.date2num(d["etd"]), win_end_num)
             width = max(end - start, 0.01)
@@ -916,6 +1048,7 @@ class BerthMonitorApp:
                            edgecolor=_blend(color, "#000000", 0.3) if in_progress else COLOR_CARD,
                            linewidth=2 if in_progress else 1.2)
             bars.append(bar)
+            live_bars.append((bar, d["eta"], d["etd"], color))
 
             tooltip = d["ship_name"]
             if d.get("voyage"):
@@ -956,7 +1089,8 @@ class BerthMonitorApp:
             pending.append((name_txt, code_txt, dot, start, start + width))
 
         if rows:
-            ax.set_yticks(range(len(rows)))
+            # 라벨은 레인이 여러 개여도 그 선석 구간의 한가운데에 하나만 둔다.
+            ax.set_yticks([row_top[k] + (lane_count[k] - 1) / 2 for k in rows])
             ax.set_yticklabels([f"{t} {b}선석" for _, t, b in rows],
                                 fontsize=12, fontweight="bold")
             # 선석 라벨을 항구 색으로 칠해 "전체" 탭에서도 어느 항인지 바로 보이게 한다.
@@ -964,8 +1098,9 @@ class BerthMonitorApp:
                 label.set_color(REGION_COLOR.get(region, COLOR_TEXT))
             # 선석이 한두 개뿐인 탭(광양 등)에서 막대가 화면 높이만큼 두꺼워지지
             # 않도록, 최소 행 수 기준으로 남는 만큼을 위아래에 나눠 비워둔다.
-            slack = max(MIN_GANTT_ROWS - len(rows), 0) / 2
-            ax.set_ylim(len(rows) - 0.5 + slack, -0.5 - slack)
+            # 기준은 선석 수가 아니라 레인 합계 — 서브레인이 생기면 그만큼 칸이 는다.
+            slack = max(MIN_GANTT_ROWS - total_units, 0) / 2
+            ax.set_ylim(total_units - 0.5 + slack, -0.5 - slack)
 
             # 날짜 라벨은 날짜 경계선이 아니라 그 날 칸의 한가운데(정오)에 둔다.
             # 경계선에 붙으면 어느 쪽 날을 가리키는지 헷갈린다.
@@ -996,18 +1131,44 @@ class BerthMonitorApp:
             # 현재 시각선 — 격자선을 진하게 올린 만큼 이쪽은 더 굵게 가서
             # 날짜 구분선과 헷갈리지 않게 한다.
             now_num = mdates.date2num(now)
-            ax.axvline(now_num, color=COLOR_NOW, linewidth=2.2, zorder=6)
+            vline = ax.axvline(now_num, color=COLOR_NOW, linewidth=2.2, zorder=6)
             # 배지는 axes 위쪽 안에 붙인다. y를 axes 비율로 잡아야 행 수가
             # 적어 위아래 여백(slack)이 생겨도 첫 행 높이를 따라 내려오지 않는다.
             # 축 밖으로 빼면 tight_layout이 자리를 잡아주지 않아 잘릴 수 있다.
-            ax.annotate("NOW", xy=(now_num, 1), xycoords=("data", "axes fraction"),
+            # 배지에 실제 시각을 같이 적는다. "NOW"만 있으면 그 선이 지금 시각인지
+            # 마지막 갱신 시각인지 구분이 안 돼서 기준으로 쓸 수가 없다.
+            badge = ax.annotate(f"NOW {now.strftime('%H:%M')}", xy=(now_num, 1),
+                        xycoords=("data", "axes fraction"),
                         xytext=(0, -3), textcoords="offset points", ha="center", va="top",
                         fontsize=8.5, fontweight="bold", color="white", zorder=7,
                         bbox=dict(boxstyle="round,pad=0.28", fc=COLOR_NOW, ec="none"))
+            self.now_artists[tab_key] = (vline, badge)
+            self.progress_bars[tab_key] = live_bars
         else:
+            self.now_artists.pop(tab_key, None)
+            self.progress_bars.pop(tab_key, None)
             ax.text(0.5, 0.5, "이 기간에 예정된 선박이 없습니다", ha="center", va="center",
                     transform=ax.transAxes, color=COLOR_MUTED, fontsize=13)
             ax.set_yticks([])
+
+        # 표시 구간(7일) 밖이라 안 그려진 소스는 "원래 없는 것"과 구분이 안 된다.
+        # 이 탭 데이터엔 있는데 구간 안에 하나도 없는 소스만 골라 다음 입항을 적어준다.
+        shown = {d.get("source") for d in usable}
+        upcoming = {}
+        for d in data:
+            src = d.get("source")
+            if src in shown or not d.get("eta") or d["eta"] <= win_end:
+                continue
+            if src not in upcoming or d["eta"] < upcoming[src]["eta"]:
+                upcoming[src] = d
+        if upcoming:
+            picks = sorted(upcoming.values(), key=lambda d: d["eta"])
+            parts = [f"{d['source']} {d['eta'].month}/{d['eta'].day} {d['ship_name']}"
+                     for d in picks[:2]]
+            if len(picks) > 2:
+                parts.append(f"외 {len(picks) - 2}곳")
+            ax.set_xlabel("구간 밖 다음 입항  ·  " + "  ·  ".join(parts),
+                          fontsize=9.5, color=COLOR_MUTED, loc="right", labelpad=6)
 
         ax.set_xlim(win_start_num, win_end_num)
         for side in ("top", "right", "left"):
@@ -1023,6 +1184,9 @@ class BerthMonitorApp:
         if bars:
             _round_bars(ax, bars)
             renderer = canvas.get_renderer()
+            # 막대 두께(픽셀). 레인이 늘면 얇아지므로 라벨 줄 수 판단에 쓴다.
+            bar_h_px = abs(ax.transData.transform((0, 0.62))[1]
+                           - ax.transData.transform((0, 0))[1])
             for name_txt, code_txt, dot, start, end in pending:
                 bar_px = abs(ax.transData.transform((end, 0))[0]
                              - ax.transData.transform((start, 0))[0])
@@ -1037,7 +1201,8 @@ class BerthMonitorApp:
                 for artist in (name_txt, code_txt):
                     if artist is not None:
                         artist.xyann = (shift, artist.xyann[1])
-                _fit_bar_labels(name_txt, code_txt, bar_px - 8 - shift * 2, renderer)
+                _fit_bar_labels(name_txt, code_txt, bar_px - 8 - shift * 2, renderer,
+                                max_h_px=bar_h_px)
             canvas.draw()
 
     def _draw_work_status(self, data):
@@ -1056,6 +1221,7 @@ class BerthMonitorApp:
 
         rows = sorted(data, key=_berth_sort_key)
         self.row_counts[WORK_TAB_KEY] = len(rows)
+        self.row_bands[WORK_TAB_KEY] = [(i, 1) for i in range(len(rows))]
         bars = []
 
         if rows:
