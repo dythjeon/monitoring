@@ -34,6 +34,7 @@ matplotlib.rcParams["font.family"] = FONT
 matplotlib.rcParams["axes.unicode_minus"] = False
 
 REFRESH_INTERVAL_SEC = 1800  # 30분마다 자동 갱신
+NOW_TICK_SEC = 60            # 현재 시각선은 데이터와 별개로 1분마다 옮긴다
 GANTT_WINDOW_DAYS = 7        # 간트 차트에 표시할 최대 기간(고정값)
 MIN_GANTT_ROWS = 5           # 행이 이보다 적어도 막대 두께는 이 기준으로 유지
 
@@ -576,6 +577,7 @@ class BerthMonitorApp:
         # 맞춰 그려져버리므로, mainloop 시작 후로 한 틱 미룬다.
         root.after(200, self.refresh)
         self._schedule_auto_refresh()
+        self._schedule_now_tick()
 
     # ---------- 레이아웃 ----------
 
