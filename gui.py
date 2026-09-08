@@ -13,11 +13,12 @@ from matplotlib.figure import Figure
 from matplotlib.patches import FancyBboxPatch, Rectangle
 from matplotlib.font_manager import FontProperties
 from matplotlib.lines import Line2D
-from matplotlib.transforms import blended_transform_factory
+from matplotlib.transforms import blended_transform_factory, offset_copy
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from scraper import (fetch_all, fetch_bptc_work_status, fetch_bptc_empty_status,
-                     fetch_gwct_empty_status, fetch_e1ct_empty_status, fetch_hjit_empty_status)
+                     fetch_gwct_empty_status, fetch_e1ct_empty_status, fetch_hjit_empty_status,
+                     lane_of as vessel_lane, LANE_COUNTRY, LANE_BY_BOUND)
 from assets import LOGO_PNG_B64
 
 
@@ -110,40 +111,45 @@ EMPTY_TABLE_GROUPS = [
 ]
 _WEEKDAY_KR = ["월", "화", "수", "목", "금", "토", "일"]
 
-# ---- 항로(Route) 코드 -> 다음 기항 국가/권역 분류 (2026-09-08 현재 미사용) ----
-# 행선지 표시(통계 카드 4개 · 막대 앞 색점 · 툴팁 "행선지" 줄)를 전부 뺐다.
-# 항로 코드만으로는 매칭되는 모선과 안 되는 모선이 섞여서, 화면에 있어도
-# 믿고 볼 수 없는 값이었다. 매핑을 다시 정리한 뒤 되살릴 예정이라 아래 표와
-# 분류 함수는 지우지 않고 남겨둔다. 되살릴 때 손볼 자리는 _build_summary(카드
-# 그룹), _on_data(카드 집계), _draw_gantt(색점 + 툴팁 줄) 세 곳이다.
-# 사용자가 직접 알려준 매핑. NCK는 항차 번호 끝 알파벳으로 방향을 구분한다
-# (예: "2618E/2619W"의 마지막 글자 W=중국행, E=일본행).
-ROUTE_REGION = {
-    "KHX": "동남아", "KHP": "동남아", "BIH": "동남아",
-    "IHS": "동남아", "IHP": "동남아", "IQH": "동남아",
-    "ISS": "중국", "BNJ": "중국",
-    "KRX": "러시아", "KRV": "러시아",
-}
-COUNTRY_KEYS = ["일본", "중국", "동남아", "러시아"]
-# 항구 색(REGION_COLOR)과 겹치지 않아야 한다 — 되살릴 때도 이 조건은 그대로다.
-# 통계 카드의 점 색이 곧 차트 안의 색이라, 같은 색이 두 가지를 뜻하면 범례가
-# 깨진다. 예전엔 동남아가 광양과 같은 #12b886이었다.
-COUNTRY_COLOR = {"일본": "#e64980", "중국": "#fa5252", "동남아": "#00b8d4", "러시아": "#7048e8"}
+# ---- 행선지(다음 기항 국가/권역) 분류 ----
+# 기준은 scraper.VESSEL_LANES 의 LANE 이다. 예전에는 터미널이 주는 route
+# 코드로 추정했는데 같은 배가 터미널마다 다른 코드로 찍히거나 코드 자체가
+# 없어서 "맞는 배와 안 맞는 배가 섞였다". 지금은 선명 -> LANE 편성표가
+# 유일한 기준이라, 편성표에 있는 배만 분류되고 나머지는 아무 표시도 안 한다.
+# 틀린 값을 보여주는 것보다 비워두는 편이 낫다.
+COUNTRY_KEYS = ["일본", "중국"]
+# 항구 색(REGION_COLOR: 부산 파랑 / 인천 주황 / 광양 초록)과 겹치지 않아야
+# 한다. 통계 카드의 점 색이 곧 차트 안의 점 색이라, 같은 색이 두 가지를
+# 뜻하면 범례가 깨진다. 동남아/러시아는 아직 쓰이는 LANE 이 없지만, 편성이
+# 추가되면 COUNTRY_KEYS 에 키만 넣으면 되도록 색은 미리 잡아둔다.
+COUNTRY_COLOR = {"일본": "#e64980", "중국": "#7048e8",
+                 "동남아": "#00b8d4", "러시아": "#12b886"}
+
+# 항차 번호의 바운드 글자. 'DPGL- 016 2622E/2623W' 처럼 숫자 뒤에 붙는다.
+_BOUND_RE = re.compile(r"\d\s*([EW])(?![A-Z])")
+
+
+def _bound_country(voyage):
+    """항차 바운드로 방향을 본다: E=일본행, W=중국행.
+
+    왕복이 같이 적힌 '2622E/2623W' 는 앞의 것(다음 항차)을 쓴다. 'DPTR-37'
+    처럼 바운드 표기가 아예 없는 터미널(BPTC·HJIT)도 있어서, 그럴 땐 분류하지
+    않고 비워둔다.
+    """
+    m = _BOUND_RE.search((voyage or "").upper())
+    return {"E": "일본", "W": "중국"}.get(m.group(1)) if m else None
 
 
 def _classify_country(d):
-    route = (d.get("route") or "").strip().upper()
-    if not route:
+    info = vessel_lane(d.get("ship_name"))
+    if not info:
         return None
-    if route == "NCK":
-        voyage = (d.get("voyage") or "").strip().upper()
-        last = voyage[-1:] if voyage else ""
-        if last == "W":
-            return "중국"
-        if last == "E":
-            return "일본"
-        return None
-    return ROUTE_REGION.get(route)
+    lane = info[0]
+    if lane in LANE_COUNTRY:
+        return LANE_COUNTRY[lane]
+    if lane in LANE_BY_BOUND:
+        return _bound_country(d.get("voyage"))
+    return None
 
 
 def _gantt_window():
@@ -171,6 +177,8 @@ def _weekday_color(dt):
 
 
 BAR_RADIUS_PX = 5    # 간트/진행률 막대 모서리 반경(픽셀)
+DOT_INSET_PT = 10    # 막대 왼쪽 안쪽에 찍는 행선지 점의 들여쓰기(포인트)
+DOT_MIN_BAR_PX = 120  # 이보다 좁은 막대에는 점을 찍지 않는다(선명을 밀어내 버린다)
 
 
 def _add_bar(ax, y, x0, x1, height, facecolor, edgecolor="none", linewidth=0, zorder=2):
@@ -656,11 +664,13 @@ class BerthMonitorApp:
     def _build_summary(self):
         self.stat_cards = {}
 
-        # 합계 | 항구별 — 성격이 다른 두 묶음이라 사이에 구분선을 둔다.
-        # 행선지별 묶음은 뺐다(ROUTE_REGION 위 주석 참고).
+        # 합계 | 항구별 | 행선지별 — 성격이 다른 세 묶음이라 사이에 구분선을 둔다.
+        # 예전엔 균등하게 한 줄로 붙어 있어 어디까지가 항구고 어디부터
+        # 행선지인지 읽히지 않았다.
         groups = [
             [(TOTAL_KEY, "전체", COLOR_PRIMARY)],
             [(key, TAB_LABEL[key], REGION_COLOR[key]) for key in TAB_KEYS[1:]],
+            [(key, key, COUNTRY_COLOR[key]) for key in COUNTRY_KEYS],
         ]
         # 헤더와 카드 사이를 넉넉히 띄워 상단 정보 블록이 서로 붙어 보이지 않게 한다.
         self._build_stat_row(groups, top_pad=26)
@@ -961,6 +971,12 @@ class BerthMonitorApp:
         for region in TAB_KEYS[1:]:
             self.stat_cards[region].set_value(sum(1 for d in visible if d.get("region") == region))
 
+        # 편성표에 없는 배는 None이 되어 어느 카드에도 안 잡힌다. 그래서
+        # 행선지 카드 합계는 "전체"보다 작을 수 있다 — 정상이다.
+        countries = [_classify_country(d) for d in visible]
+        for key in COUNTRY_KEYS:
+            self.stat_cards[key].set_value(countries.count(key))
+
         # 창 크기가 바뀌면 막대 모서리 반경과 라벨 말줄임을 다시 계산해야 해서
         # (둘 다 픽셀 기준) 마지막 데이터를 들고 있다가 그대로 다시 그린다.
         self._last_draw = (data, work_data, empty_data)
@@ -1159,10 +1175,13 @@ class BerthMonitorApp:
 
         span = win_end_num - win_start_num
         # 라벨 말줄임과 모서리 반경은 그린 뒤에 실제 픽셀을 재서 처리한다(아래 참고).
-        pending = []   # [(name 아티스트, code 아티스트, 좌, 우), ...]
+        pending = []   # [(name 아티스트, code 아티스트, 점 아티스트, 좌, 우), ...]
         bars = []
         live_bars = []          # 1분마다 접안 중 판정을 다시 하기 위해 붙잡아 둔다
         self._drawn_window_start = win_start
+        # 행선지 점은 막대 왼쪽 끝에서 일정 '포인트'만큼 안쪽에 찍는다. 데이터
+        # 좌표로 잡으면 창 크기에 따라 위치가 흔들려서 offset 변환을 쓴다.
+        dot_trans = offset_copy(ax.transData, fig=fig, x=DOT_INSET_PT, y=0, units="points")
 
         for d in usable:
             y = row_top[(d["terminal"], d["berth"])] + lane_of[id(d)]
@@ -1182,11 +1201,26 @@ class BerthMonitorApp:
             if d.get("voyage"):
                 tooltip += f" ({d['voyage']})"
             tooltip += f"\n작업예정: {_fmt_dt(d['eta'])} ~ {_fmt_dt(d['etd'])}"
+            info = vessel_lane(d["ship_name"])
+            if info:
+                tooltip += f"\n항로: {info[0]} · {info[1]} · {info[2]}"
+            country = _classify_country(d)
+            if country:
+                tooltip += f"\n행선지: {country}"
             self.hover_targets[tab_key].append((bar, tooltip))
+
+            # 행선지 색 점 — 통계 카드의 점과 같은 색/모양이라 그대로 범례가 된다.
+            dot = None
+            if country:
+                dot = ax.plot([start], [y], marker="o", linestyle="none", markersize=5,
+                              markerfacecolor=COUNTRY_COLOR[country], markeredgecolor="white",
+                              markeredgewidth=0.8, transform=dot_trans, zorder=4)[0]
 
             # 막대 폭에 따라 표기 수준을 낮춘다: 넓으면 선명+항차, 좁으면 선명만,
             # 아주 좁으면 글자를 넣지 않는다. 실제 넘침 여부는 그린 뒤 다시 본다.
             if width <= span / 55:
+                if dot is not None:
+                    pending.append((None, None, dot, start, start + width))
                 continue
 
             two_line = width > span / 22 and d.get("voyage")
@@ -1202,7 +1236,7 @@ class BerthMonitorApp:
                                        xytext=(0, -2), textcoords="offset points",
                                        ha="center", va="top", fontsize=8.5, color="white",
                                        alpha=0.75, zorder=3, clip_on=True)
-            pending.append((name_txt, code_txt, start, start + width))
+            pending.append((name_txt, code_txt, dot, start, start + width))
 
         if rows:
             # 라벨은 레인이 여러 개여도 그 선석 구간의 한가운데에 하나만 둔다.
@@ -1306,10 +1340,21 @@ class BerthMonitorApp:
             # 막대 두께(픽셀). 레인이 늘면 얇아지므로 라벨 줄 수 판단에 쓴다.
             bar_h_px = abs(ax.transData.transform((0, 0.62))[1]
                            - ax.transData.transform((0, 0))[1])
-            for name_txt, code_txt, start, end in pending:
+            for name_txt, code_txt, dot, start, end in pending:
                 bar_px = abs(ax.transData.transform((end, 0))[0]
                              - ax.transData.transform((start, 0))[0])
-                _fit_bar_labels(name_txt, code_txt, bar_px - 8, renderer,
+                # 좁은 막대에서는 행선지 점이 글자를 덮으므로 점을 뺀다.
+                if dot is not None and bar_px < DOT_MIN_BAR_PX:
+                    dot.set_visible(False)
+                    dot = None
+                if name_txt is None:
+                    continue
+                # 점이 있으면 글자를 그만큼 오른쪽으로 밀고 쓸 수 있는 폭도 줄인다.
+                shift = DOT_INSET_PT if dot is not None else 0
+                for artist in (name_txt, code_txt):
+                    if artist is not None:
+                        artist.xyann = (shift, artist.xyann[1])
+                _fit_bar_labels(name_txt, code_txt, bar_px - 8 - shift * 2, renderer,
                                 max_h_px=bar_h_px)
             canvas.draw()
 

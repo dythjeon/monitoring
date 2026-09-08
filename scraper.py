@@ -38,18 +38,74 @@ def _parse_dt(s):
 
 
 # 선사코드가 DYS로 안 찍혀도 실제로는 DYS 소속/파트너 선박이라 항상 추적해야 하는 선명.
-# 필요할 때마다 이 목록에 이름만 추가하면 전체 터미널에 공통 적용된다.
+# LANE 편성이 아직 안 정해진 배를 여기에 둔다. 편성이 정해지면 VESSEL_LANES로 옮긴다.
 EXTRA_SHIP_NAMES = ("SM TOKYO",)
+
+
+# ---- 서비스 편성표: 선명 -> (LANE, ROUTE, 운항선사) ----
+# 왜 선명이 기준인가: 터미널이 주는 필드로는 편성을 알 수 없다.
+#  - 선사코드(line)는 터미널마다 다르게 찍힌다. HONOR GLORY는 신선대에서 NSL,
+#    광양서부에서 DYS로 나온다. 운항선사 코드라서 용선 관계에 따라 달라진다.
+#  - 항로코드(route)는 BPTC와 HJIT 페이지에 아예 없고(빈 문자열), 있는 곳도
+#    DONGJIN FIDES가 'BKS1'처럼 편성표(BKS)와 미묘하게 다르게 찍힌다.
+# 선명은 어느 터미널에서나 같으므로 이것만 믿는다. 예전에 route 코드로
+# 행선지를 추정했다가 "맞는 배와 안 맞는 배가 섞이는" 문제로 걷어냈다.
+#
+# 이 표에 이름을 올리면 두 가지가 동시에 된다: (1) 추적 대상 등록,
+# (2) LANE 기준 행선지 분류(gui._classify_country). 새 배는 한 줄만 추가하면 된다.
+VESSEL_LANES = {
+    # LANE KJK — 이하 전 ROUTE 일본행
+    "DONGJIN FORTUNE":      ("KJK", "NC1", "동진상선"),
+    "HEUNG-A XIAMEN":       ("KJK", "NC2", "흥아라인"),
+    "HONOR GLORY":          ("KJK", "DHA", "동영해운"),
+    "HONOR OCEAN":          ("KJK", "HS2", "팬오션"),
+    "DONGJIN FIDES":        ("KJK", "BKS", "동진상선"),
+    # LANE KCK — 이하 전 ROUTE 중국행
+    "PEGASUS GLORY":        ("KCK", "ISS", "동영해운"),
+    "ZHONG SHENG TUO HAI":  ("KCK", "IS2", "고려해운"),
+    "PANCON GLORY":         ("KCK", "IS3", "범주해운"),
+    "HE YANG":              ("KCK", "BNJ", "동영해운"),
+    "YANGTZE TRADER":       ("KCK", "NKX", "장금상선"),
+    # LANE CKJ — 배가 아니라 그 항차의 바운드로 갈린다(LANE_BY_BOUND 참고)
+    "PEGASUS TERA":         ("CKJ", "NCK", "동영해운"),
+    "PEGASUS PETA":         ("CKJ", "NCK", "동영해운"),
+}
+
+# LANE -> 행선지. 이 표에 없는 LANE은 분류하지 않는다.
+LANE_COUNTRY = {"KJK": "일본", "KCK": "중국"}
+# 배마다 고정이 아니라 항차 바운드(E/W)로 갈리는 LANE.
+LANE_BY_BOUND = ("CKJ",)
+
+
+def _norm_name(s):
+    return re.sub(r"\s+", " ", (s or "").strip().upper())
+
+
+def lane_of(ship_name):
+    """선명으로 (LANE, ROUTE, 운항선사)를 찾는다. 편성표에 없으면 None.
+
+    터미널에 따라 선명 뒤에 항차나 접미사가 붙는 경우가 있어 부분일치로 본다.
+    """
+    name = _norm_name(ship_name)
+    if not name:
+        return None
+    for key, info in VESSEL_LANES.items():
+        if key in name:
+            return info
+    return None
 
 
 def _is_tracked(line, ship_name, extra_codes=()):
     """선사코드가 DYS이거나, 그 터미널에서 DYS와 동일하게 취급하는 컨소시엄/파트너
-    항로 코드(extra_codes)이거나, EXTRA_SHIP_NAMES에 있는 선명이면 추적 대상으로 본다."""
+    항로 코드(extra_codes)이거나, VESSEL_LANES 편성표 또는 EXTRA_SHIP_NAMES에
+    있는 선명이면 추적 대상으로 본다."""
     line = (line or "").strip().upper()
     if line == "DYS" or line in extra_codes:
         return True
-    ship_name = (ship_name or "").lower()
-    return any(name.lower() in ship_name for name in EXTRA_SHIP_NAMES)
+    if lane_of(ship_name):
+        return True
+    ship = _norm_name(ship_name)
+    return any(_norm_name(name) in ship for name in EXTRA_SHIP_NAMES)
 
 
 BPTC_EXTRA_CODES = ("KHP", "NKX")
@@ -170,6 +226,7 @@ def fetch_bptc_work_status():
 
 
 HJIT_EXTRA_CODES = ("IQH", "IHP")
+HJIT_PAGE_LIMIT = 20   # 페이지 루프 안전장치. Total 파싱이 틀려도 여기서 멈춘다.
 
 
 def fetch_hjit(period_days=14, base_date=None):
@@ -194,7 +251,7 @@ def fetch_hjit(period_days=14, base_date=None):
     body = {
         "cmd": "BerthScheduleList",
         "smode": "",
-        "nowPage": "1",
+        "nowPage": "1",   # _load_page()가 페이지마다 덮어쓴다
         "scPeriod": str(period_days),
         "val1": "",
         "menuID": "01",
@@ -207,17 +264,43 @@ def fetch_hjit(period_days=14, base_date=None):
         "thePtnr": "",
         "theLane": "",
     }
-    resp = session.post(post_url, data=body, headers={"Referer": get_url}, timeout=15)
-    resp.raise_for_status()
-    resp.encoding = resp.apparent_encoding or "utf-8"
+    def _load_page(page):
+        body["nowPage"] = str(page)
+        resp = session.post(post_url, data=body, headers={"Referer": get_url}, timeout=15)
+        resp.raise_for_status()
+        resp.encoding = resp.apparent_encoding or "utf-8"
+        return BeautifulSoup(resp.text, "html.parser")
 
-    soup = BeautifulSoup(resp.text, "html.parser")
+    def _parse_page(soup):
+        # 직계 자식 td만 본다. 이 페이지는 표가 여러 겹으로 중첩돼 있어서
+        # recursive 검색(기본값)을 쓰면 바깥쪽 tr이 안쪽 표의 td를 통째로
+        # 주워와 cells[:12]가 첫 행이 되고, 결국 첫 행이 4번씩 중복된다.
+        out = []
+        for tr in soup.find_all("tr"):
+            tds = tr.find_all("td", class_="ta2", recursive=False)
+            if len(tds) < 12:
+                continue
+            out.append([td.get_text(strip=True) for td in tds])
+        return out
+
+    # 이 페이지는 한 번에 10건씩만 준다(Total:60이면 6페이지). 예전엔 1페이지만
+    # 읽어서 사흘치만 보였고, 그 뒤에 있는 우리 선박(PEGASUS TERA/PETA/HOPE,
+    # SM TOKYO 등)이 통째로 누락됐다. 한진신항이 늘 0건이던 원인이었다.
+    first = _load_page(1)
+    cells_all = _parse_page(first)
+    per_page = len(cells_all)
+    m = re.search(r"Total\s*:\s*([\d,]+)", first.get_text(" ", strip=True))
+    total = int(m.group(1).replace(",", "")) if m else 0
+    if per_page and total > per_page:
+        last_page = min(-(-total // per_page), HJIT_PAGE_LIMIT)
+        for page in range(2, last_page + 1):
+            page_cells = _parse_page(_load_page(page))
+            if not page_cells:      # 빈 페이지가 나오면 더 볼 것이 없다
+                break
+            cells_all.extend(page_cells)
+
     rows = []
-    for tr in soup.find_all("tr"):
-        tds = tr.find_all("td", class_="ta2")
-        if len(tds) < 12:
-            continue
-        cells = [td.get_text(strip=True) for td in tds]
+    for cells in cells_all:
         voyage, ship_name, line, _in_voy, _out_voy, _cct, etb_atb, etd_atd, _dis, _load, _tp, berth = cells[:12]
         berth = berth.split("(")[0].strip()
         if not _is_tracked(line, ship_name, extra_codes=HJIT_EXTRA_CODES):
