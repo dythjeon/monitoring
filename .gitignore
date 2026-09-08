@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 dist_share/
 build_share/
+BerthMonitor.spec
