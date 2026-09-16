@@ -109,6 +109,11 @@ EMPTY_TABLE_GROUPS = [
     ("OT", [("OT20", "20'"), ("OT40", "40'")]),
     ("FR", [("FL20", "20'"), ("FL40", "40'")]),
 ]
+# 공컨 재고를 주는 터미널. 간트의 TERMINAL_ORDER 와 같은 순서로 둔다.
+# 여기 이름은 scraper 가 내려주는 terminal 값과 글자까지 같아야 한다 —
+# 2026-09-07 에 HJIT -> 한진신항으로 표기를 바꿨을 때 이 목록만 옛 이름으로
+# 남아 한진신항 재고(300여 개)가 표에서 통째로 빠지고 합계도 틀렸었다.
+EMPTY_TERMINALS = ("신선대", "감만", "광양서부", "E1CT", "한진신항")
 _WEEKDAY_KR = ["월", "화", "수", "목", "금", "토", "일"]
 
 # ---- 행선지(다음 기항 국가/권역) 분류 ----
@@ -312,6 +317,36 @@ def _round_rect(canvas, x1, y1, x2, y2, radius=14, **kwargs):
         x1, y2, x1, y2 - r, x1, y1 + r, x1, y1,
     ]
     return canvas.create_polygon(points, smooth=True, **kwargs)
+
+
+def _draw_share_bar(canvas, segments, gap=3, radius=4):
+    """비중을 한 줄짜리 스택바로 그린다. segments 는 (라벨, 값, 색) 목록.
+
+    캔버스 폭이 확정되기 전(생성 직후)과 창 크기가 바뀔 때 모두 다시 그려야
+    해서 <Configure> 에 물려 둔다. 조각 사이를 gap 픽셀 띄우면 값이 비슷한
+    이웃 조각도 경계가 보인다.
+    """
+    def redraw(_event=None):
+        canvas.delete("all")
+        w, h = canvas.winfo_width(), canvas.winfo_height()
+        if w < 10 or h < 4:
+            return
+        r = min(radius, h / 2)
+        visible = [s for s in segments if s[1] > 0]
+        total = sum(s[1] for s in visible)
+        if not visible or total <= 0:
+            _round_rect(canvas, 0, 0, w, h, radius=r, fill=COLOR_TRACK, outline="")
+            return
+        avail = w - gap * (len(visible) - 1)
+        x = 0.0
+        for i, (_label, val, color) in enumerate(visible):
+            # 마지막 조각은 반올림 오차를 흡수해 오른쪽 끝에 정확히 맞춘다.
+            x2 = w if i == len(visible) - 1 else x + avail * val / total
+            _round_rect(canvas, x, 0, max(x2, x + 2), h, radius=r, fill=color, outline="")
+            x = x2 + gap
+
+    canvas.bind("<Configure>", redraw)
+    redraw()
 
 
 class Card:
@@ -1447,69 +1482,129 @@ class BerthMonitorApp:
             canvas.draw()
 
     def _draw_empty_status(self, data):
-        # 이 탭은 그래프가 아니라 표라서(사용자 요청) Card.inner에 매 갱신마다
-        # Label 그리드를 새로 그린다. 데이터가 4~9칸으로 적어 다시 그리는
-        # 비용이 무시할 만하다.
+        """국내 공컨 재고 표.
+
+        그래프가 아니라 표라서(사용자 요청) Card.inner 에 매 갱신마다 위젯을
+        새로 그린다. 5행 8열이라 다시 그리는 비용은 무시할 만하다.
+
+        구성: 카드 제목 줄 - 2단 헤더(DC/OT/FR 칩 + 사이즈) - 터미널 행 -
+        합계 행 - 터미널별 비중 스택바.
+        """
         parent = self.cards[EMPTY_TAB_KEY].inner
         for w in parent.winfo_children():
             w.destroy()
+        # 남는 공간을 먹는 빈 행의 위치가 밀도에 따라 달라진다. 위젯을 지워도
+        # grid 행 설정은 parent에 남으므로 지난번 weight를 먼저 털어낸다.
+        for r in range(parent.grid_size()[1] + 2):
+            parent.grid_rowconfigure(r, weight=0)
+
+        PAD = 22          # 카드 안쪽 좌우 여백
+        GAP = 20          # DC/OT/FR 그룹 사이 빈 칸 폭
+        ZERO = "#c9ced8"  # 값이 0인 칸의 대시 색 (본문보다 확실히 흐리게)
 
         by_key = {(d["carrier"], d["terminal"]): d for d in data}
         rows = [(carrier, terminal)
                 for carrier in EMPTY_CARRIER_COLOR
-                for terminal in ("신선대", "감만", "광양서부", "E1CT", "HJIT")]
+                for terminal in EMPTY_TERMINALS]
 
-        # 컬럼 배치: 구분 | DC(3칸) | div | OT(2칸) | div | FR(2칸) | div | 합계.
-        # 그룹 사이에 얇은 구분선을 넣어 DC/OT/FR 경계가 한눈에 들어오게 한다.
+        # 행 색은 지역 색을 쓰되, 같은 지역이 연달아 나오면 한 단계씩 밝힌다.
+        # 안 그러면 아래 스택바에서 신선대와 감만이 한 덩어리로 보인다.
+        row_color, seen = {}, {}
+        for _carrier, terminal in rows:
+            region = TERMINAL_REGION.get(terminal, "")
+            n = seen.get(region, 0)
+            seen[region] = n + 1
+            row_color[terminal] = _blend(REGION_COLOR.get(region, COLOR_PRIMARY),
+                                         "#ffffff", min(0.45, 0.34 * n))
+
+        # 열 배치: 구분 | DC(3칸) gap | OT(2칸) gap | FR(2칸) gap | 합계.
+        # 예전에는 그룹 사이를 세로 실선으로 갈랐는데 줄무늬 행과 겹치면서
+        # 선이 토막나 보였다. 지금은 선 대신 빈 칸으로만 그룹을 나눈다.
         LABEL_COL = 0
-        group_cols = []  # [(group_label, [(counts_key, sub_label, col), ...]), ...]
+        group_cols, gap_cols = [], []
         c = 1
         for group_label, cols in EMPTY_TABLE_GROUPS:
-            entries = [(key, sub_label, c + i) for i, (key, sub_label) in enumerate(cols)]
+            entries = [(key, sub, c + i) for i, (key, sub) in enumerate(cols)]
             group_cols.append((group_label, entries))
-            c += len(cols) + 1  # 그룹 칸 + 뒤따르는 구분선 칸
-        divider_cols = [entries[-1][2] + 1 for _, entries in group_cols]
+            c += len(cols)
+            gap_cols.append(c)
+            c += 1
         total_col = c
         ncols = c + 1
 
-        parent.grid_columnconfigure(LABEL_COL, weight=3, uniform="empty_col")
-        for _, entries in group_cols:
-            for _key, _label, col in entries:
-                parent.grid_columnconfigure(col, weight=2, uniform="empty_col")
-        for dc in divider_cols:
-            parent.grid_columnconfigure(dc, weight=0, minsize=16)
-        parent.grid_columnconfigure(total_col, weight=2, uniform="empty_col")
+        parent.grid_columnconfigure(LABEL_COL, weight=0, minsize=220)
+        for _label, entries in group_cols:
+            for _key, _sub, col in entries:
+                parent.grid_columnconfigure(col, weight=1, uniform="ecol", minsize=62)
+        for gc in gap_cols:
+            parent.grid_columnconfigure(gc, weight=0, minsize=GAP)
+        parent.grid_columnconfigure(total_col, weight=0, minsize=150)
 
-        def _divider(row, col, bg, rowspan=1):
-            cell = tk.Frame(parent, bg=bg)
-            cell.grid(row=row, column=col, rowspan=rowspan, sticky="nsew")
-            tk.Frame(cell, bg=COLOR_BORDER, width=1).place(relx=0.5, rely=0, relheight=1, anchor="n")
+        # 창 높이에 따라 밀도를 바꾼다. Tk Label 의 높이는 글꼴이 정하므로
+        # (Pretendard 12pt 가 35px) 여백만 줄여서는 행이 작아지지 않는다 —
+        # 글자 크기를 같이 내려야 한다. 기본 밀도로 그리면 표가 400px,
+        # 비중 스택바가 93px 을 쓴다. 최소 창(1180x720)에서 카드에 남는
+        # 높이는 341px 뿐이라 그대로 그리면 마지막 행부터 잘려 나간다.
+        TABLE_PX, SHARE_PX = 400, 113
+        avail = self.chart_container.winfo_height() - 2 * self.cards[EMPTY_TAB_KEY].pady
+        # 아직 배치 전(높이 1)이면 넉넉한 쪽으로 그린다.
+        # <Configure> -> _render_all() 이 곧 실측 높이로 다시 그려준다.
+        compact = 0 < avail < TABLE_PX
+        show_share = avail <= 0 or avail >= TABLE_PX + SHARE_PX
 
-        # 1행: 구분/합계는 두 헤더 행을 세로로 합쳐서(rowspan) 쓰고,
-        # DC/OT/FR은 하위 사이즈 칸 개수만큼 가로로 합쳐(columnspan) 그린다.
+        F_TITLE, F_BIG = (13, 16) if compact else (15, 20)
+        F_NAME, F_TAG = (11, 8) if compact else (12, 9)
+        F_SUB, F_VAL, F_TOTAL = (9, 10, 11) if compact else (10, 12, 14)
+        F_SUM, F_SUM_TOTAL = (10, 12) if compact else (12, 15)
+        HEAD_GAP = 10 if compact else 16   # 제목 줄 아래 여백
+        HDR_GAP = 6 if compact else 10     # 2단 헤더 아래 여백
+        SUM_PAD = 2 if compact else 5      # 합계 행 위아래 여백
+        # 남는 높이는 행 간격으로 돌려준다. 안 그러면 표가 카드 위쪽에
+        # 몰리고 아래가 텅 빈 채로 남는다. 행이 끝없이 늘어나지 않게
+        # 상한을 둔다.
+        slack = avail - TABLE_PX - (SHARE_PX if show_share else 0)
+        ROW_EXTRA = max(0, min(13, slack // (2 * (len(rows) + 1)))) if avail > 0 else 0
+
+        def cell_total(key):
+            return sum((by_key.get(rk) or {}).get("counts", {}).get(key, 0) for rk in rows)
+
+        total_all = sum((by_key.get(rk) or {}).get("total", 0) for rk in rows)
+
+        # ---- 제목 줄: 왼쪽에 무엇을 보는 표인지, 오른쪽에 총 재고 ----
+        head = tk.Frame(parent, bg=COLOR_CARD)
+        head.grid(row=0, column=0, columnspan=ncols, sticky="ew", pady=(2, HEAD_GAP))
+        tk.Label(head, text="국내 공컨 재고", bg=COLOR_CARD, fg=COLOR_TEXT,
+                 font=(FONT, F_TITLE, "bold"), padx=PAD).pack(side="left")
+        tk.Label(head, text=f"선사코드 DYS · {len(rows)}개 터미널", bg=COLOR_CARD,
+                 fg=COLOR_MUTED, font=(FONT, 10)).pack(side="left", pady=(5, 0))
+        tk.Label(head, text="개", bg=COLOR_CARD, fg=COLOR_MUTED,
+                 font=(FONT, 10), padx=PAD).pack(side="right", pady=(7, 0))
+        tk.Label(head, text=f"{total_all:,}", bg=COLOR_CARD, fg=COLOR_PRIMARY,
+                 font=(FONT, F_BIG, "bold")).pack(side="right")
+        tk.Label(head, text="총 재고", bg=COLOR_CARD, fg=COLOR_MUTED,
+                 font=(FONT, 10)).pack(side="right", padx=(0, 9), pady=(7, 0))
+
+        # ---- 2단 헤더: 1행 그룹 칩(DC/OT/FR), 2행 사이즈 ----
         tk.Label(parent, text="구분", bg=COLOR_CARD, fg=COLOR_MUTED,
-                 font=(FONT, 11, "bold")).grid(row=0, column=LABEL_COL, rowspan=2, sticky="nsew",
-                                                padx=(16, 0), pady=(6, 12))
-        tk.Label(parent, text="합계", bg=COLOR_PRIMARY_SOFT, fg=COLOR_PRIMARY_DARK,
-                 font=(FONT, 11, "bold")).grid(row=0, column=total_col, rowspan=2, sticky="nsew",
-                                                padx=(0, 16), pady=(6, 12))
-
+                 font=(FONT, 10, "bold"), anchor="w", padx=PAD).grid(
+            row=1, column=LABEL_COL, rowspan=2, sticky="nsew", pady=(0, HDR_GAP))
         for group_label, entries in group_cols:
-            tk.Label(parent, text=group_label, bg=COLOR_CARD, fg=COLOR_TEXT,
-                     font=(FONT, 12, "bold")).grid(row=0, column=entries[0][2], columnspan=len(entries),
-                                                    sticky="nsew", pady=(6, 2))
-            for _key, sub_label, col in entries:
+            tk.Label(parent, text=group_label, bg=COLOR_PRIMARY_SOFT, fg=COLOR_PRIMARY_DARK,
+                     font=(FONT, 10, "bold"), padx=13, pady=3).grid(
+                row=1, column=entries[0][2], columnspan=len(entries),
+                sticky="e", padx=(0, 10), pady=(0, max(2, HDR_GAP - 4)))
+            for _key, sub, col in entries:
                 # 아래 숫자와 같은 우측 정렬로 맞춘다 (가운데 정렬이면 헤더와
-                # 값이 서로 어긋나 보여 어느 열인지 눈으로 따라가기 어렵다).
-                tk.Label(parent, text=sub_label, bg=COLOR_CARD, fg=COLOR_MUTED,
-                         font=(FONT, 10), anchor="e", padx=10).grid(
-                    row=1, column=col, sticky="nsew", pady=(0, 12))
+                # 값이 어긋나 보여 어느 열인지 눈으로 따라가기 어렵다).
+                tk.Label(parent, text=sub, bg=COLOR_CARD, fg=COLOR_MUTED,
+                         font=(FONT, F_SUB), anchor="e", padx=10).grid(
+                    row=2, column=col, sticky="nsew", pady=(0, HDR_GAP))
+        tk.Label(parent, text="합계", bg=COLOR_CARD, fg=COLOR_TEXT,
+                 font=(FONT, 10, "bold"), anchor="e", padx=PAD).grid(
+            row=1, column=total_col, rowspan=2, sticky="nsew", pady=(0, HDR_GAP))
 
-        for dc in divider_cols:
-            _divider(0, dc, COLOR_CARD, rowspan=2)
-
-        tk.Frame(parent, bg=COLOR_PRIMARY, height=2).grid(
-            row=2, column=0, columnspan=ncols, sticky="ew")
+        tk.Frame(parent, bg=COLOR_TABLE_LINE, height=1).grid(
+            row=3, column=0, columnspan=ncols, sticky="ew")
 
         def _bind_row_hover(cells):
             """행 전체를 함께 밝히는 마우스오버 효과. 셀마다 원래 배경색을
@@ -1526,67 +1621,112 @@ class BerthMonitorApp:
                 w.bind("<Enter>", enter)
                 w.bind("<Leave>", leave)
 
-        for r, (carrier, terminal) in enumerate(rows):
+        # ---- 터미널 행 ----
+        grid_row = 4
+        for i, (carrier, terminal) in enumerate(rows):
+            if i:
+                tk.Frame(parent, bg=COLOR_BORDER, height=1).grid(
+                    row=grid_row, column=0, columnspan=ncols, sticky="ew", padx=PAD)
+                grid_row += 1
+
             d = by_key.get((carrier, terminal))
             counts = d["counts"] if d else {}
             total = d["total"] if d else 0
-            bg = COLOR_CARD if r % 2 == 0 else COLOR_ROW_ALT
-            grid_row = r + 3
+            bg = COLOR_CARD
             cells = []
 
             label_cell = tk.Frame(parent, bg=bg)
-            label_cell.grid(row=grid_row, column=LABEL_COL, sticky="nsew")
-            dot = tk.Canvas(label_cell, width=8, height=8, bg=bg, highlightthickness=0)
-            dot.create_oval(1, 1, 7, 7, fill=EMPTY_CARRIER_COLOR[carrier], outline="")
-            dot.pack(side="left", padx=(16, 6), pady=15)
-            name = tk.Label(label_cell, text=f"{carrier} · {terminal}", bg=bg, fg=COLOR_TEXT,
-                            font=(FONT, 11, "bold"))
+            label_cell.grid(row=grid_row, column=LABEL_COL, sticky="nsew", pady=ROW_EXTRA)
+            dot = tk.Canvas(label_cell, width=10, height=10, bg=bg, highlightthickness=0)
+            dot.create_oval(0, 0, 9, 9, fill=row_color[terminal], outline="")
+            dot.pack(side="left", padx=(PAD, 9), pady=4)
+            name = tk.Label(label_cell, text=terminal, bg=bg, fg=COLOR_TEXT,
+                            font=(FONT, F_NAME, "bold"))
             name.pack(side="left")
-            cells += [(label_cell, bg), (dot, bg), (name, bg)]
+            region_tag = tk.Label(label_cell, text=TERMINAL_REGION.get(terminal, ""),
+                                  bg=bg, fg=COLOR_MUTED, font=(FONT, F_TAG))
+            region_tag.pack(side="left", padx=(8, 0), pady=(3, 0))
+            cells += [(label_cell, bg), (dot, bg), (name, bg), (region_tag, bg)]
 
             for _group_label, entries in group_cols:
-                for key, _sub_label, col in entries:
+                for key, _sub, col in entries:
                     val = counts.get(key, 0)
-                    cell = tk.Label(parent, text=str(val) if val else "–", bg=bg,
-                                    fg=COLOR_TEXT if val else COLOR_MUTED, font=(FONT, 11),
-                                    anchor="e", padx=10)
-                    cell.grid(row=grid_row, column=col, sticky="nsew", pady=15)
+                    cell = tk.Label(parent, text=f"{val:,}" if val else "–", bg=bg,
+                                    fg=COLOR_TEXT if val else ZERO,
+                                    font=(FONT, F_VAL), anchor="e", padx=10)
+                    cell.grid(row=grid_row, column=col, sticky="nsew", pady=ROW_EXTRA)
                     cells.append((cell, bg))
+            for gc in gap_cols:
+                gap_cell = tk.Frame(parent, bg=bg)
+                gap_cell.grid(row=grid_row, column=gc, sticky="nsew", pady=ROW_EXTRA)
+                cells.append((gap_cell, bg))
 
-            for dc in divider_cols:
-                _divider(grid_row, dc, bg)
-
-            total_cell = tk.Label(parent, text=str(total), bg=COLOR_PRIMARY_SOFT,
-                                  fg=COLOR_PRIMARY_DARK, font=(FONT, 13, "bold"),
-                                  anchor="e", justify="right")
-            total_cell.grid(row=grid_row, column=total_col, sticky="nsew",
-                            padx=(0, 16), pady=15)
-            cells.append((total_cell, COLOR_PRIMARY_SOFT))
+            total_cell = tk.Label(parent, text=f"{total:,}", bg=bg,
+                                  fg=COLOR_TEXT if total else ZERO,
+                                  font=(FONT, F_TOTAL, "bold"), anchor="e", padx=PAD)
+            total_cell.grid(row=grid_row, column=total_col, sticky="nsew", pady=ROW_EXTRA)
+            cells.append((total_cell, bg))
 
             _bind_row_hover(cells)
+            grid_row += 1
 
-        # 마지막 합계 행: 터미널을 다 더한 값이 궁금할 때 눈으로 세지 않아도 되게.
-        sum_row = len(rows) + 3
-        tk.Frame(parent, bg=COLOR_BORDER, height=1).grid(
-            row=sum_row, column=0, columnspan=ncols, sticky="ew")
-        sum_row += 1
+        # ---- 합계 행: 터미널을 다 더한 값을 눈으로 세지 않아도 되게 ----
+        tk.Frame(parent, bg=COLOR_TABLE_LINE, height=1).grid(
+            row=grid_row, column=0, columnspan=ncols, sticky="ew")
+        grid_row += 1
 
         tk.Label(parent, text="합계", bg=COLOR_CARD, fg=COLOR_TEXT,
-                 font=(FONT, 11, "bold"), anchor="w", padx=16).grid(
-            row=sum_row, column=LABEL_COL, sticky="nsew", pady=14)
+                 font=(FONT, F_NAME, "bold"), anchor="w", padx=PAD).grid(
+            row=grid_row, column=LABEL_COL, sticky="nsew", pady=SUM_PAD + ROW_EXTRA)
         for _group_label, entries in group_cols:
-            for key, _sub_label, col in entries:
-                val = sum((by_key.get(rk) or {}).get("counts", {}).get(key, 0) for rk in rows)
-                tk.Label(parent, text=str(val) if val else "–", bg=COLOR_CARD,
-                         fg=COLOR_TEXT if val else COLOR_MUTED, font=(FONT, 11, "bold"),
-                         anchor="e", padx=10).grid(
-                    row=sum_row, column=col, sticky="nsew", pady=14)
-        for dc in divider_cols:
-            _divider(sum_row, dc, COLOR_CARD)
-        tk.Label(parent, text=str(sum((by_key.get(rk) or {}).get("total", 0) for rk in rows)),
-                 bg=COLOR_PRIMARY, fg="white", font=(FONT, 13, "bold"),
-                 anchor="e", justify="right").grid(
-            row=sum_row, column=total_col, sticky="nsew", padx=(0, 16), pady=14)
+            for key, _sub, col in entries:
+                val = cell_total(key)
+                tk.Label(parent, text=f"{val:,}" if val else "–", bg=COLOR_CARD,
+                         fg=COLOR_TEXT if val else ZERO, font=(FONT, F_SUM, "bold"),
+                         anchor="e", padx=10).grid(row=grid_row, column=col, sticky="nsew",
+                                                  pady=SUM_PAD + ROW_EXTRA)
+        tk.Label(parent, text=f"{total_all:,}", bg=COLOR_CARD, fg=COLOR_PRIMARY,
+                 font=(FONT, F_SUM_TOTAL, "bold"), anchor="e", padx=PAD).grid(
+            row=grid_row, column=total_col, sticky="nsew", pady=SUM_PAD + ROW_EXTRA)
+        grid_row += 1
+
+        # ---- 터미널별 비중: 표만으로는 어디에 몰려 있는지 한눈에 안 들어온다 ----
+        if not show_share:
+            parent.grid_rowconfigure(grid_row, weight=1)
+            tk.Frame(parent, bg=COLOR_CARD).grid(row=grid_row, column=0, sticky="nsew")
+            return
+
+        share = tk.Frame(parent, bg=COLOR_CARD)
+        share.grid(row=grid_row, column=0, columnspan=ncols, sticky="ew",
+                   padx=PAD, pady=(20, 2))
+        tk.Label(share, text="터미널별 비중", bg=COLOR_CARD, fg=COLOR_MUTED,
+                 font=(FONT, 10, "bold"), anchor="w").pack(fill="x")
+        bar = tk.Canvas(share, bg=COLOR_CARD, height=14, highlightthickness=0)
+        bar.pack(fill="x", pady=(8, 9))
+        segments = [(terminal, (by_key.get((carrier, terminal)) or {}).get("total", 0),
+                     row_color[terminal])
+                    for carrier, terminal in rows]
+        _draw_share_bar(bar, segments)
+
+        legend = tk.Frame(share, bg=COLOR_CARD)
+        legend.pack(fill="x")
+        for terminal, val, color in segments:
+            pct = (val / total_all * 100) if total_all else 0
+            chip = tk.Frame(legend, bg=COLOR_CARD)
+            chip.pack(side="left", padx=(0, 20))
+            swatch = tk.Canvas(chip, width=9, height=9, bg=COLOR_CARD, highlightthickness=0)
+            swatch.create_oval(0, 0, 8, 8, fill=color, outline="")
+            swatch.pack(side="left", padx=(0, 6), pady=(3, 0))
+            tk.Label(chip, text=terminal, bg=COLOR_CARD, fg=COLOR_TEXT,
+                     font=(FONT, 10)).pack(side="left")
+            tk.Label(chip, text=f"{val:,}개 · {pct:.0f}%", bg=COLOR_CARD, fg=COLOR_MUTED,
+                     font=(FONT, 10)).pack(side="left", padx=(7, 0))
+        grid_row += 1
+
+        # 남는 세로 공간은 표가 아니라 이 빈 행이 먹게 해서, 행 높이가
+        # 창 크기에 따라 늘었다 줄었다 하지 않게 한다.
+        tk.Frame(parent, bg=COLOR_CARD).grid(row=grid_row, column=0, sticky="nsew")
+        parent.grid_rowconfigure(grid_row, weight=1)
 
 
 def main():
