@@ -1158,7 +1158,7 @@ let STATIC = location.hostname.endsWith("github.io") || location.protocol === "f
 // ---- 비밀번호 잠금 ----
 // data.json 이 암호화돼 올라온 경우({enc:1,...}) 비밀번호로 만든 키로 풀어야 내용이 보인다.
 // 화면만 가리는 게 아니라 자료 자체가 암호문이라, 비밀번호 없이는 파일을 직접 받아도 읽을 수 없다.
-// 한 번 맞게 입력하면 키를 이 브라우저에 기억해 다음부터는 묻지 않는다(비밀번호가 바뀌면 다시 묻는다).
+// 맞게 입력하면 그 탭이 열려 있는 동안만 기억한다(sessionStorage). 창을 닫았다 열면 다시 묻는다.
 const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 let gatePending = null, memKey = null;
 async function deriveKeyB64(pw, j) {
@@ -1173,10 +1173,10 @@ async function decryptWith(keyB64, j) {
   return JSON.parse(new TextDecoder().decode(pt));
 }
 async function unlock(j) {
-  let saved = memKey; try { saved = saved || localStorage.getItem("dysKey"); } catch {}
+  let saved = memKey; try { localStorage.removeItem("dysKey"); saved = saved || sessionStorage.getItem("dysKey"); } catch {}
   if (saved) {
     try { const d = await decryptWith(saved, j); memKey = saved; return d; }
-    catch { memKey = null; try { localStorage.removeItem("dysKey"); } catch {} }     // 비밀번호가 바뀌었다
+    catch { memKey = null; try { sessionStorage.removeItem("dysKey"); } catch {} }     // 비밀번호가 바뀌었다
   }
   gatePending = j;
   if (!$("gate").classList.contains("on")) {
@@ -1193,7 +1193,7 @@ $("gateForm").onsubmit = async (ev) => {
   try {
     const k = await deriveKeyB64(pw, gatePending);
     await decryptWith(k, gatePending);
-    memKey = k; try { localStorage.setItem("dysKey", k); } catch {}
+    memKey = k; try { sessionStorage.setItem("dysKey", k); } catch {}
     $("gate").classList.remove("on"); $("gatePw").value = "";
     loadData();
   } catch {
