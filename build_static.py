@@ -6,6 +6,8 @@ index.html 은 github.io 에서 열리면 /api/data 대신 ./data.json 을 읽�
 
 사용:  python build_static.py            -> site/ 폴더 생성
 """
+import base64
+import hashlib
 import json
 import os
 import re
@@ -20,6 +22,21 @@ from server import collect, REFRESH_SEC          # noqa: E402  (server import �
 from scraper import SOURCES                      # noqa: E402
 
 OUT = os.path.join(HERE, "site")
+
+# 비밀번호 잠금. 환경변수 SITE_PASSWORD (GitHub 저장소 Secret) 가 있으면 data.json 을 AES-GCM 으로
+# 암호화해서 올린다. 저장소와 사이트가 공개여도 비밀번호 없이는 내용을 읽을 수 없다.
+# 비밀번호가 없으면 예전처럼 평문으로 올라가고 잠금 화면도 뜨지 않는다.
+ENC_SALT = "dys-monitoring-v1"
+ENC_ITER = 200000
+
+
+def encrypt_payload(payload, password):
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM   # 잠금을 쓸 때만 필요
+    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), ENC_SALT.encode("utf-8"), ENC_ITER)
+    iv = os.urandom(12)
+    ct = AESGCM(key).encrypt(iv, json.dumps(payload, ensure_ascii=False).encode("utf-8"), None)
+    b64 = lambda b: base64.b64encode(b).decode("ascii")
+    return {"enc": 1, "salt": ENC_SALT, "iter": ENC_ITER, "iv": b64(iv), "ct": b64(ct)}
 
 
 
@@ -41,7 +58,8 @@ def main():
 
     os.makedirs(OUT, exist_ok=True)
     with open(os.path.join(OUT, "data.json"), "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False)
+        password = os.environ.get("SITE_PASSWORD", "").strip()
+        json.dump(encrypt_payload(payload, password) if password else payload, f, ensure_ascii=False)
     shutil.copyfile(os.path.join(HERE, "index.html"), os.path.join(OUT, "index.html"))
     shutil.copyfile(os.path.join(HERE, "coast.json"), os.path.join(OUT, "coast.json"))
     open(os.path.join(OUT, ".nojekyll"), "w").close()
@@ -60,7 +78,7 @@ def main():
 
     ok = sum(1 for _n, c in stats if c is not None)
     print(f"[{now:%Y-%m-%d %H:%M:%S}] site/ 생성: 선석 {len(rows)}건 · 작업 {len(work)}건 · "
-          f"공컨 {len(empty)}건 · 조회 {ok}/{len(stats)} · 오류 {len(errors)}건")
+          f"{'암호화됨' if password else '잠금 없음(평문)'} · 공컨 {len(empty)}건 · 조회 {ok}/{len(stats)} · 오류 {len(errors)}건")
     for e in errors:
         print("   !", e)
 

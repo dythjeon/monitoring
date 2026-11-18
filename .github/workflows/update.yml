@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BERTH_STATIC_REFRESH_SEC: "300"   # 화면의 "N분마다 자동 갱신" 표기
+      SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}   # 저장소 Settings > Secrets 에 넣은 사이트 비밀번호
       TZ: Asia/Seoul              # 수집 기준일·갱신시각을 한국시간으로
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +31,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install requests certifi beautifulsoup4
+      - run: pip install requests certifi beautifulsoup4 cryptography
       - name: 수집 → site/
         run: python build_static.py
       - uses: actions/configure-pages@v5

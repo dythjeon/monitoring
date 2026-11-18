@@ -173,6 +173,17 @@ table.et tfoot td.tot { color: var(--primary); font-size: 16px; }
 footer { text-align: center; color: #b4b8c2; font-size: 11px; padding: 0 0 14px; }
 .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: #1c1f26; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; }
 .toast.on { opacity: 1; }
+/* ---- 비밀번호 잠금 화면 ---- */
+.gate { position: fixed; inset: 0; z-index: 1000; background: var(--bg); display: none; align-items: center; justify-content: center; padding: 20px; }
+.gate.on { display: flex; }
+.gate form { width: 100%; max-width: 340px; background: var(--card); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow); padding: 30px 26px 26px; text-align: center; }
+.gate img { height: 48px; margin-bottom: 12px; }
+.gate h2 { margin: 0 0 4px; font-size: 18px; }
+.gate p { margin: 0 0 18px; color: var(--muted); font-size: 12.5px; }
+.gate input { width: 100%; border: 1px solid var(--table-line); border-radius: 10px; padding: 11px 12px; font: inherit; font-size: 14px; outline: none; text-align: center; }
+.gate input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.gate .btn { width: 100%; margin-top: 10px; padding: 11px; }
+.gate .msg { min-height: 18px; margin-top: 10px; font-size: 12px; color: var(--now); }
 
 @media (max-width: 760px) {
   .hd { padding: 14px 16px; } .hd h1 { font-size: 18px; } .hd .logo { height: 34px; } .hd .right { margin-left: 0; width: 100%; flex-direction: row; justify-content: space-between; align-items: center; }
@@ -219,6 +230,16 @@ footer { text-align: center; color: #b4b8c2; font-size: 11px; padding: 0 0 14px;
 <footer>BerthMonitor Web · 터미널 사이트에서 수집한 자료이며 실제 작업 일정과 다를 수 있습니다<div style="margin-top:6px;font-weight:600;letter-spacing:.04em">Powered by THJEON</div></footer>
 <div class="tip" id="tip"></div>
 <div class="toast" id="toast"></div>
+<div class="gate" id="gate">
+  <form id="gateForm" autocomplete="off">
+    <img id="gateLogo" alt="동영해운">
+    <h2>동영해운 종합 모니터링</h2>
+    <p>비밀번호를 입력해 주세요</p>
+    <input type="password" id="gatePw" placeholder="비밀번호" autocomplete="current-password" aria-label="비밀번호">
+    <button class="btn" type="submit" id="gateBtn">확인</button>
+    <div class="msg" id="gateMsg"></div>
+  </form>
+</div>
 
 <script>
 // ===================== 상수 (gui.py 와 동일) =====================
@@ -914,6 +935,54 @@ function renderAll() {
 // ./data.json 을 읽고, SSE/수동조회는 없다(GitHub Actions 가 5분마다 새로 올림).
 let STATIC = location.hostname.endsWith("github.io") || location.protocol === "file:"
           || /claude|anthropic/.test(location.hostname) || location.search.includes("static");
+// ---- 비밀번호 잠금 ----
+// data.json 이 암호화돼 올라온 경우({enc:1,...}) 비밀번호로 만든 키로 풀어야 내용이 보인다.
+// 화면만 가리는 게 아니라 자료 자체가 암호문이라, 비밀번호 없이는 파일을 직접 받아도 읽을 수 없다.
+// 한 번 맞게 입력하면 키를 이 브라우저에 기억해 다음부터는 묻지 않는다(비밀번호가 바뀌면 다시 묻는다).
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+let gatePending = null, memKey = null;
+async function deriveKeyB64(pw, j) {
+  const te = new TextEncoder();
+  const base = await crypto.subtle.importKey("raw", te.encode(pw), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: te.encode(j.salt), iterations: j.iter, hash: "SHA-256" }, base, 256);
+  return btoa(String.fromCharCode(...new Uint8Array(bits)));
+}
+async function decryptWith(keyB64, j) {
+  const key = await crypto.subtle.importKey("raw", unb64(keyB64), "AES-GCM", false, ["decrypt"]);
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(j.iv) }, key, unb64(j.ct));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+async function unlock(j) {
+  let saved = memKey; try { saved = saved || localStorage.getItem("dysKey"); } catch {}
+  if (saved) {
+    try { const d = await decryptWith(saved, j); memKey = saved; return d; }
+    catch { memKey = null; try { localStorage.removeItem("dysKey"); } catch {} }     // 비밀번호가 바뀌었다
+  }
+  gatePending = j;
+  if (!$("gate").classList.contains("on")) {
+    $("gateLogo").src = document.querySelector(".hd .logo").src;
+    $("gate").classList.add("on"); $("gatePw").focus();
+  }
+  return null;
+}
+$("gateForm").onsubmit = async (ev) => {
+  ev.preventDefault();
+  const pw = $("gatePw").value.trim();
+  if (!pw || !gatePending) return;
+  $("gateBtn").disabled = true; $("gateMsg").textContent = "";
+  try {
+    const k = await deriveKeyB64(pw, gatePending);
+    await decryptWith(k, gatePending);
+    memKey = k; try { localStorage.setItem("dysKey", k); } catch {}
+    $("gate").classList.remove("on"); $("gatePw").value = "";
+    loadData();
+  } catch {
+    $("gateMsg").textContent = "비밀번호가 맞지 않습니다";
+    $("gatePw").select();
+  }
+  $("gateBtn").disabled = false;
+};
+
 async function loadData() {
   try {
     let r = await fetch(STATIC ? "./data.json" : "/api/data", { cache: "no-store" }).catch(() => null);
@@ -921,7 +990,8 @@ async function loadData() {
       r = await fetch("./data.json", { cache: "no-store" });
       if (r.ok) { STATIC = true; $("live").style.display = "none"; }
     }
-    const j = await r.json();
+    let j = await r.json();
+    if (j.enc) { j = await unlock(j); if (!j) return; }
     j.data = (j.data || []).map(d => ({ ...d, eta: parseDT(d.eta), etd: parseDT(d.etd) }));
     if (STATIC) { delete j.server_now; j.fetching = false; }   // 파일 생성 시각은 현재 시각이 아니다
     S = { ...S, ...j };
