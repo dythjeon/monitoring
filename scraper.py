@@ -108,7 +108,59 @@ def _is_tracked(line, ship_name, extra_codes=()):
     return any(_norm_name(name) in ship for name in EXTRA_SHIP_NAMES)
 
 
+# ===========================================================================
+# 터미널별 추적 조건 (2026-11-18 사용자 지정)
+#
+# 모선은 선사 사정으로 자주 바뀌므로 선명이 아니라 "항로 코드"로 가져온다. 배가 바뀌어도 항로는 그대로다.
+# 표기 규칙  "자체코드(터미널코드)":  괄호 앞 = 동영해운이 쓰는 코드, 괄호 안 = 그 터미널 화면에 찍히는 코드.
+#   - 가져올 때는 괄호 안(터미널) 코드로 찾는다.  괄호가 없으면 두 코드가 같다.
+#   - 화면에는 "자체코드 (터미널코드)" 로 보여준다 (route_label).
+# 항로를 추가·삭제하려면 아래 문자열만 고치면 된다.
+# ===========================================================================
+def _routes(spec):
+    """'NCK NC1(KJK) ...' -> {터미널코드: 자체코드}"""
+    out = {}
+    for tok in spec.replace(",", " ").split():
+        m = re.match(r"^([^()]+)\(([^()]+)\)$", tok)
+        own, term = (m.group(1), m.group(2)) if m else (tok, tok)
+        out[term.strip().upper()] = own.strip().upper()
+    return out
+
+
+BPTC_ROUTES = _routes("NCK NC1(KJK) NC2(KHX1) HS2 KJS2 DHA DBS(KCJ) TPX(TPX1) TP2(TPX2) BXQ PBQ(KQP) "
+                      "NKX BNJ KRX KRV BIH KHP KVT KCI")                      # + 선사 DYS 전부
+HPNT_ROUTES = _routes("KHX BKS(BKS1) ENS(SPX1) EN2(SPX2) BSN MSK(KMS3) AK6 AK3 AK4 BLQ(CNS2) VTX")   # + 선사 DYS 전부
+GWCT_ROUTES = _routes("KHX BNJ NKX VTX")
+KIT_ROUTES = _routes("BIH KVT")
+HJIT_ROUTES = _routes("TIS TI2(TIS2) IHP NCK IS3(ISS) IHS IQH KHX")           # + 선사 DYS 전부
+SNCT_ROUTES = _routes("KHP")
+PCTC_ROUTES = _routes("IHP IHS(IHS1) PXG(PXS) TI2(TIS2)")
+# E1CT 는 화면에 항로 코드가 없어 여기만 선명으로 가져온다.
+E1CT_SHIP_NAMES = ("PEGASUS TERA", "PANCON HARMONY", "PANCON GLORY", "STAR EXPLORER")
+
+
+def _route_hit(route, routes):
+    return (route or "").strip().upper() in routes
+
+
+def route_label(route, routes):
+    """화면 표기: 자체코드 (터미널코드). 두 코드가 같으면 하나만. 조건표에 없는 항로는 터미널 코드 그대로."""
+    code = (route or "").strip().upper()
+    own = routes.get(code)
+    if not code:
+        return ""
+    return code if not own or own == code else f"{own} ({code})"
+
+
+def _is_dys(line):
+    return (line or "").strip().upper() == "DYS"
+
+
 BPTC_EXTRA_CODES = ("KHP", "NKX")
+
+
+# 본선작업현황 화면에는 항로 칸이 없어서, 선석배정에서 추적 대상으로 잡힌 선명을 기억해 뒀다가 쓴다.
+_BPTC_TRACKED_NAMES = set()
 
 
 def fetch_bptc(time_range="week"):
@@ -147,8 +199,10 @@ def fetch_bptc(time_range="week"):
         if len(cells) < 10:
             continue
         terminal, berth, voyage, ship_name, _side, line, eta_plan, eta, _work_done, etd = cells[:10]
-        if not _is_tracked(line, ship_name, extra_codes=BPTC_EXTRA_CODES):
+        route = cells[15] if len(cells) > 15 else ""       # 열: ...|양하|선적|S/H|전배|항로|검역
+        if not (_is_dys(line) or _route_hit(route, BPTC_ROUTES)):
             continue
+        _BPTC_TRACKED_NAMES.add(_norm_name(ship_name))
         rows.append({
             "source": "BPTC",
             "region": "부산",
@@ -157,7 +211,8 @@ def fetch_bptc(time_range="week"):
             "voyage": voyage,
             "ship_name": ship_name,
             "line": line,
-            "route": "",  # BPTC 선석배정 페이지에는 항로 코드가 없음
+            "route": route,
+            "route_label": route_label(route, BPTC_ROUTES),
             "eta": _parse_dt(eta) or _parse_dt(eta_plan),
             "etd": _parse_dt(etd),
         })
@@ -207,7 +262,7 @@ def fetch_bptc_work_status():
             discharge = counts[0].get_text(strip=True) if len(counts) > 0 else ""
             load = counts[1].get_text(strip=True) if len(counts) > 1 else ""
 
-            if not _is_tracked(line, ship_name, extra_codes=BPTC_EXTRA_CODES):
+            if not (_is_dys(line) or _norm_name(ship_name) in _BPTC_TRACKED_NAMES):
                 continue
 
             rows.append({
@@ -267,9 +322,8 @@ def _hjit_schedule(session, from_day, to_day):
 
 
 def _hjit_tracked(v):
-    # carrier 가 DYS 이거나, 컨소시엄 항로(serviceLane) 코드가 IQH/IHP 이거나, 편성표 선명
-    return _is_tracked(v.get("carrier"), v.get("vesselName"), extra_codes=HJIT_EXTRA_CODES) \
-        or (v.get("serviceLane") or "").strip().upper() in HJIT_EXTRA_CODES
+    # 선사(carrier)가 DYS 이거나 항로(serviceLane)가 조건표에 있으면
+    return _is_dys(v.get("carrier")) or _route_hit(v.get("serviceLane"), HJIT_ROUTES)
 
 
 def _hjit_voyage(v):
@@ -300,6 +354,7 @@ def fetch_hjit(period_days=14, base_date=None):
             "ship_name": (v.get("vesselName") or "").strip(),
             "line": (v.get("carrier") or "").strip(),
             "route": (v.get("serviceLane") or "").strip(),
+            "route_label": route_label(v.get("serviceLane"), HJIT_ROUTES),
             "eta": _parse_dt(v.get("atb") or v.get("etb")),
             "etd": _parse_dt(v.get("atd") or v.get("etd")),
         })
@@ -403,7 +458,7 @@ def fetch_gwct(time_range="week"):
             continue
         _no, berth, voyage, ship_name, _line_voyage, _side, line, eta, etd = cells[:9]
         route = cells[16] if len(cells) > 16 else ""
-        if not _is_tracked(line, ship_name):
+        if not _route_hit(route, GWCT_ROUTES):
             continue
         rows.append({
             "source": "GWCT",
@@ -414,6 +469,7 @@ def fetch_gwct(time_range="week"):
             "ship_name": ship_name,
             "line": line,
             "route": route,
+            "route_label": route_label(route, GWCT_ROUTES),
             "eta": _parse_dt(eta.replace("/", "-")),
             "etd": _parse_dt(etd.replace("/", "-")),
         })
@@ -529,7 +585,8 @@ def fetch_snct(line_code="KHP", days=21):
                 "source": "SNCT", "region": "인천", "terminal": "선광신항",
                 "berth": first(1).split("(")[0].strip(),
                 "voyage": voyage, "ship_name": ship_name,
-                "line": first(10), "route": route, "eta": eta, "etd": etd,
+                "line": first(10), "route": route, "route_label": route_label(route, SNCT_ROUTES),
+                "eta": eta, "etd": etd,
             })
         if not added:          # 페이지가 더 없거나 같은 내용이 반복되면 끝
             break
@@ -662,7 +719,7 @@ def fetch_e1ct():
 
         line = cells[8][0] if cells[8] else ""
         ship_name = cells[4][0] if cells[4] else ""
-        if not _is_tracked(line, ship_name):
+        if not any(n in _norm_name(ship_name) for n in E1CT_SHIP_NAMES):     # 항로 코드가 없는 화면이라 선명으로
             continue
 
         rows.append({
@@ -805,7 +862,7 @@ def fetch_hpnt():
             (voyage_code, inout_voy, berth, _bitt, eta, _work, etd, _closing,
              _side, _qty, _qc, ship_name, line, route) = cells[:14]
 
-            if not _is_tracked(line, ship_name):
+            if not (_is_dys(line) or _route_hit(route, HPNT_ROUTES)):
                 continue
 
             rows.append({
@@ -817,10 +874,88 @@ def fetch_hpnt():
                 "ship_name": ship_name,
                 "line": line,
                 "route": route,
+                "route_label": route_label(route, HPNT_ROUTES),
                 "eta": _parse_dt(eta),
                 "etd": _parse_dt(etd),
             })
     return rows
+
+
+# ---------------------------------------------------------------------------
+# 광양국제 (KIT, 한국국제터미널) - 광양항.  허치슨과 같은 계열 화면(info.kitl.com)
+# ---------------------------------------------------------------------------
+KIT_BASE = "https://info.kitl.com/jsp"
+
+
+def _kit_cells(tr_html):
+    """이 사이트는 </td> 가 군데군데 빠져 있어 <td 여는 태그 기준으로 직접 자른다."""
+    return [re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", c)).strip() for c in re.split(r"<td[^>]*>", tr_html)[1:]]
+
+
+def fetch_kit():
+    """광양국제 선석배정현황에서 항로(Route)가 KIT_ROUTES 인 모선만.
+    열: 터미널항차|선사항차|선석|Bitt|접안예정|출항예정|Closing|Port/STBD|총물량|QC|모선명|선사|Route|Fixed
+    한 페이지 20건이고 'Total : N' 으로 전체 건수를 알려준다."""
+    url = f"{KIT_BASE}/T01/sunsuk.jsp"
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    today = datetime.now() - timedelta(days=1)
+    form = {"year": str(today.year), "month": f"{today.month:02d}", "day": f"{today.day:02d}", "vessel": "",
+            "langType": "K", "mainType": "T01", "subType": "01", "optType": "T", "terminal": "KITLIB",
+            "startPage": "1"}
+    rows, seen, pages, page = [], set(), 1, 1
+    while page <= min(pages, 15):
+        resp = session.post(url, data=dict(form, currentPage=str(page)), timeout=20)
+        resp.raise_for_status()
+        resp.encoding = "euc-kr"
+        if page == 1:
+            m = re.search(r"Total\s*:\s*(?:<[^>]+>\s*)*(\d+)", resp.text)
+            pages = max(1, -(-int(m.group(1)) // 20)) if m else 1
+        for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", resp.text, re.S | re.I):
+            if "routeNew(" not in tr:
+                continue
+            c = _kit_cells(tr)
+            if len(c) < 13:
+                continue
+            route, ship_name = c[12], c[10]
+            if not _route_hit(route, KIT_ROUTES):
+                continue
+            eta, etd = _parse_dt(c[4]), _parse_dt(c[5])
+            if not eta or not etd:
+                continue
+            key = (c[0], eta)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append({
+                "source": "KIT", "region": "광양", "terminal": "광양국제",
+                "berth": c[2], "voyage": f"{c[0]} {re.sub(' ', '', c[1])}".strip(), "ship_name": ship_name,
+                "line": c[11], "route": route, "route_label": route_label(route, KIT_ROUTES),
+                "eta": eta, "etd": etd,
+            })
+        page += 1
+    return rows
+
+
+def fetch_kit_empty_status(carrier_code="DYS"):
+    """광양국제 '선사별 공컨 반출 가능 수량'(데미지·홀딩·지정·선적·환적 제외). 열: 선사|20|40|40HQ|45"""
+    resp = requests.get(f"{KIT_BASE}/T05/banchul_allow.jsp", headers=HEADERS, timeout=20)
+    resp.raise_for_status()
+    resp.encoding = "euc-kr"
+    soup = BeautifulSoup(resp.text, "html.parser")
+    found = False
+    for tr in soup.find_all("tr"):
+        cells = [td.get_text(strip=True) for td in tr.find_all("td", recursive=False)]
+        if len(cells) != 5 or not cells[1].isdigit():
+            continue
+        found = True
+        if cells[0].upper() != carrier_code.upper():
+            continue
+        counts = dict(zip(("GP20", "GP40", "HQ40", "HQ45"), (int(x) if x.isdigit() else 0 for x in cells[1:5])))
+        return [{"carrier": carrier_code.upper(), "terminal": "광양국제", "counts": counts, "total": sum(counts.values())}]
+    if not found:
+        raise ValueError("광양국제 공컨 표를 읽지 못했습니다")
+    return [{"carrier": carrier_code.upper(), "terminal": "광양국제", "counts": {"GP20": 0, "GP40": 0, "HQ40": 0}, "total": 0}]
 
 
 BPTC_EMPTY_CARRIER_CODES = ("DYS",)
@@ -876,12 +1011,11 @@ def fetch_bptc_empty_status(carrier_codes=BPTC_EMPTY_CARRIER_CODES):
 # PCTC (한진평택컨테이너터미널) - 평택항
 # ---------------------------------------------------------------------------
 PCTC_BASE = "https://www.pctc21.com"
-PCTC_LANES = ("IHP", "IHS")      # 이 항로로 시작하는 모선은 선사와 관계없이 전부 가져온다 (IHS1 같은 변형 포함)
 
 
 def fetch_pctc(days=14):
     """PCTC 선석배정 목록. 화면이 부르는 JSON(/esvc/vessel/berthScheduleT/data)을 그대로 읽는다.
-    선사 필터가 없어 전체를 받아 항로(IN_LANE)가 PCTC_LANES 로 시작하는 것만 남긴다."""
+    선사 필터가 없어 전체를 받아 항로(IN_LANE)가 PCTC_ROUTES 조건표에 있는 것만 남긴다(선사 무관)."""
     session = requests.Session()
     session.headers.update(HEADERS)
     session.get(f"{PCTC_BASE}/esvc/vessel/berthScheduleT", timeout=15).raise_for_status()
@@ -897,7 +1031,7 @@ def fetch_pctc(days=14):
         j = resp.json()
         for v in j.get("content") or []:
             lane = (v.get("IN_LANE") or "").strip().upper()
-            if not lane.startswith(PCTC_LANES):
+            if not _route_hit(lane, PCTC_ROUTES):
                 continue
             eta, etd = _parse_dt(v.get("ATA") or ""), _parse_dt(v.get("ATD") or "")
             if not eta or not etd:
@@ -908,7 +1042,7 @@ def fetch_pctc(days=14):
                 "voyage": (v.get("OPR_VOY") or v.get("VOY_NO") or "").strip(),
                 "ship_name": (v.get("VSL_NM") or "").strip(),
                 "line": (v.get("PTNR_CODE") or "").strip(),
-                "route": lane, "eta": eta, "etd": etd,
+                "route": lane, "route_label": route_label(lane, PCTC_ROUTES), "eta": eta, "etd": etd,
             })
         if page >= int(j.get("totalPages") or 1):
             break
@@ -968,7 +1102,7 @@ def fetch_gct(time_range="month", carrier_code="DYS"):
         rows.append({
             "source": "GCT", "region": "군산", "terminal": "GCT",
             "berth": cells[0], "voyage": cells[1], "ship_name": cells[2],
-            "line": cells[4], "route": cells[14], "eta": eta, "etd": etd,
+            "line": cells[4], "route": cells[14], "route_label": cells[14], "eta": eta, "etd": etd,
         })
     return rows
 
@@ -1001,6 +1135,7 @@ SOURCES = [
     ("선광신항 (선광신컨테이너터미널)", fetch_snct),
     ("E1CT (E1컨테이너터미널)", fetch_e1ct),
     ("광양서부 (광양항서부컨테이너터미널)", fetch_gwct),
+    ("광양국제 (한국국제터미널 KIT)", fetch_kit),
     ("PCTC (한진평택컨테이너터미널)", fetch_pctc),
     ("GCT (군산컨테이너터미널)", fetch_gct),
 ]

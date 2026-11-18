@@ -27,7 +27,7 @@ from urllib.parse import urlparse
 
 from scraper import (SOURCES, fetch_all, fetch_bptc_work_status, fetch_hjit_work_status, fetch_bptc_empty_status,
                      fetch_gwct_empty_status, fetch_e1ct_empty_status, fetch_hjit_empty_status,
-                     fetch_pctc_empty_status, fetch_gct_empty_status, fetch_snct_empty_status,
+                     fetch_pctc_empty_status, fetch_gct_empty_status, fetch_snct_empty_status, fetch_kit_empty_status,
                      lane_of, LANE_COUNTRY, LANE_BY_BOUND)
 import re
 from typhoon import fetch_typhoons
@@ -114,6 +114,7 @@ def collect():
     empty = []
     for label, fn in (("국내공컨현황", fetch_bptc_empty_status),
                       ("국내공컨현황(광양서부)", fetch_gwct_empty_status),
+                      ("국내공컨현황(광양국제)", fetch_kit_empty_status),
                       ("국내공컨현황(E1CT)", fetch_e1ct_empty_status),
                       ("국내공컨현황(HJIT)", fetch_hjit_empty_status),
                       ("국내공컨현황(선광신항)", fetch_snct_empty_status),
@@ -140,6 +141,7 @@ def collect():
             "terminal": d.get("terminal"), "berth": d.get("berth"),
             "voyage": d.get("voyage"), "ship_name": d.get("ship_name"),
             "line": d.get("line"), "route": d.get("route"),
+            "route_label": d.get("route_label") or d.get("route") or "",
             "eta": _iso(d.get("eta")), "etd": _iso(d.get("etd")),
             "lane": list(info) if info else None,
             "country": _classify_country(d),
