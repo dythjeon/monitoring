@@ -31,6 +31,7 @@ from scraper import (SOURCES, fetch_all, fetch_bptc_work_status, fetch_hjit_work
                      lane_of, LANE_COUNTRY, LANE_BY_BOUND)
 import re
 from typhoon import fetch_typhoons
+from fx import fetch_fx
 
 try:                                   # 한글 콘솔 출력 깨짐 방지
     sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
@@ -79,6 +80,7 @@ STATE = {
     "fetching": False,
     "data": [], "work": [], "empty": [], "errors": [], "stats": [],
     "typhoons": None,          # typhoon.fetch_typhoons() 결과 (태풍 탭)
+    "fx": None,                # fx.fetch_fx() 결과 (환율 띠)
 }
 LOCK = threading.Lock()
 WAKE = threading.Event()           # 수동 새로고침 요청이 오면 깨운다
@@ -147,7 +149,12 @@ def collect():
             "country": _classify_country(d),
         })
     work_rows = [dict(w, eta=_iso(w.get("eta")), etd=_iso(w.get("etd"))) for w in work]
-    return rows, work_rows, empty, errors, [list(s) for s in stats], typhoons
+    try:
+        fx = fetch_fx()
+    except Exception as e:
+        fx = None
+        errors = list(errors) + [f"환율: {e}"]
+    return rows, work_rows, empty, errors, [list(s) for s in stats], typhoons, fx
 
 
 def refresh_once():
@@ -160,9 +167,9 @@ def refresh_once():
     _notify({"type": "fetching"})
     t0 = time.time()
     try:
-        rows, work, empty, errors, stats, typhoons = collect()
+        rows, work, empty, errors, stats, typhoons, fx = collect()
         with LOCK:
-            STATE.update(data=rows, work=work, empty=empty, errors=errors, stats=stats, typhoons=typhoons,
+            STATE.update(data=rows, work=work, empty=empty, errors=errors, stats=stats, typhoons=typhoons, fx=fx,
                          updated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             STATE["generation"] += 1
             gen = STATE["generation"]

@@ -183,6 +183,24 @@ table.et tfoot td.tot { color: var(--primary); font-size: 16px; }
 footer { text-align: center; color: #b4b8c2; font-size: 11px; padding: 0 0 14px; }
 .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: #1c1f26; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; }
 .toast.on { opacity: 1; }
+/* ---- 환율 띠 ---- */
+.fx { flex: none; background: var(--card); border-bottom: 1px solid var(--border); overflow: hidden; position: relative; display: none; }
+.fx.on { display: block; }
+.fx::before, .fx::after { content: ""; position: absolute; top: 0; bottom: 0; width: 70px; z-index: 1; pointer-events: none; }
+.fx::before { left: 0; background: linear-gradient(90deg, var(--card), rgba(255,255,255,0)); }
+.fx::after { right: 0; background: linear-gradient(270deg, var(--card), rgba(255,255,255,0)); }
+.fx .track { display: flex; width: max-content; animation: fxmove 46s linear infinite; }
+.fx:hover .track { animation-play-state: paused; }
+.fx .set { display: flex; flex: none; }
+.fx .it { display: flex; align-items: baseline; gap: 8px; padding: 10px 26px; white-space: nowrap; font-size: 13px; border-right: 1px solid var(--border); }
+.fx .it .cd { font-weight: 700; letter-spacing: .02em; }
+.fx .it .nm { color: var(--muted); font-size: 12px; }
+.fx .it .rt { font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
+.fx .it .ch { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted); }
+.fx .it .ch.up { color: #e03131; } .fx .it .ch.dn { color: #1c64f2; }       /* 국내 관례: 상승 빨강 · 하락 파랑 */
+.fx .it.src { color: var(--muted); font-size: 11.5px; }
+@keyframes fxmove { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) { .fx .track { animation: none; } .fx { overflow-x: auto; } }
 /* ---- Barge Tariff ---- */
 .tf { padding: 6px 10px 10px; display: flex; flex-direction: column; min-height: 0; }
 .tf .head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; padding: 0 2px; flex-wrap: wrap; }
@@ -265,6 +283,7 @@ footer { text-align: center; color: #b4b8c2; font-size: 11px; padding: 0 0 14px;
     </div>
   </div>
 </header>
+<div class="fx" id="fx" aria-label="환율"><div class="track" id="fxTrack"></div></div>
 
 <main>
   <div class="stats" id="stats"></div>
@@ -1204,7 +1223,31 @@ function renderPane() {
   else if (paneKey === "tariff") renderTariff(pane);
   else renderEmpty(pane);
 }
+// 환율 띠. 같은 묶음을 두 번 이어 붙이고 절반만큼 흘려 보내면 끊김 없이 돈다.
+let fxKey = "";
+function renderFx() {
+  const fx = S.fx, box = $("fx");
+  if (!fx || !fx.items || !fx.items.length) { box.classList.remove("on"); return; }
+  const key = JSON.stringify(fx);
+  if (key === fxKey) return;            // 값이 그대로면 다시 그리지 않는다(그리면 흐름이 처음으로 튄다)
+  fxKey = key;
+  const num = (v) => v.toLocaleString("ko-KR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const one = (it) => {
+    const c = it.change, cls = c > 0 ? "up" : c < 0 ? "dn" : "";
+    const ch = c == null ? "" : `<span class="ch ${cls}">${c > 0 ? "▲" : c < 0 ? "▼" : "–"} ${num(Math.abs(c))}${it.pct == null ? "" : ` (${it.pct > 0 ? "+" : ""}${it.pct.toFixed(2)}%)`}</span>`;
+    return `<div class="it"><span class="cd">${esc(it.code)}</span><span class="nm">${esc(it.name)}${it.unit > 1 ? " " + it.unit : ""}</span><span class="rt">${num(it.rate)}</span>${ch}</div>`;
+  };
+  const set = `<div class="set">${fx.items.map(one).join("")}<div class="it src">${esc(fx.source || "")} · ${esc((fx.updated || "").slice(5))} 기준 · 원(KRW)</div></div>`;
+  // 화면이 넓어도 빈 곳이 없도록 한 묶음을 충분히 반복한 뒤, 그 전체를 두 번 놓는다
+  const reps = Math.max(2, Math.ceil(innerWidth / (fx.items.length * 230 + 330)) + 1);
+  const half = set.repeat(reps);
+  $("fxTrack").innerHTML = half + half;
+  $("fxTrack").style.animationDuration = (reps * (fx.items.length + 1) * 6.5) + "s";
+  box.classList.add("on");
+}
+
 function renderAll() {
+  renderFx();
   const [ws, we] = ganttWindow();
   renderStats(S.data.filter(d => inWindow(d, ws, we)));
   renderStatus();

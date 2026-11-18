@@ -41,7 +41,7 @@ def encrypt_payload(payload, password):
 
 
 def main():
-    rows, work, empty, errors, stats, typhoons = collect()
+    rows, work, empty, errors, stats, typhoons, fx = collect()
 
     now = datetime.now()
     payload = {
@@ -49,7 +49,7 @@ def main():
         "updated_at": now.strftime("%Y-%m-%d %H:%M:%S"),
         "fetching": False,
         "data": rows, "work": work, "empty": empty,
-        "errors": errors, "stats": stats, "typhoons": typhoons,
+        "errors": errors, "stats": stats, "typhoons": typhoons, "fx": fx,
         "refresh_sec": int(os.environ.get("BERTH_STATIC_REFRESH_SEC", "1800")),   # 아티팩트 재게시 주기(30분)
         "server_now": now.strftime("%Y-%m-%dT%H:%M:%S"),
         "sources": [name for name, _fn in SOURCES],
