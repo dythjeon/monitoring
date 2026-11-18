@@ -855,6 +855,127 @@ def fetch_bptc_empty_status(carrier_codes=BPTC_EMPTY_CARRIER_CODES):
     return rows
 
 
+# ---------------------------------------------------------------------------
+# PCTC (한진평택컨테이너터미널) - 평택항
+# ---------------------------------------------------------------------------
+PCTC_BASE = "https://www.pctc21.com"
+PCTC_LANES = ("IHP", "IHS")      # 이 항로로 시작하는 모선은 선사와 관계없이 전부 가져온다 (IHS1 같은 변형 포함)
+
+
+def fetch_pctc(days=14):
+    """PCTC 선석배정 목록. 화면이 부르는 JSON(/esvc/vessel/berthScheduleT/data)을 그대로 읽는다.
+    선사 필터가 없어 전체를 받아 항로(IN_LANE)가 PCTC_LANES 로 시작하는 것만 남긴다."""
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    session.get(f"{PCTC_BASE}/esvc/vessel/berthScheduleT", timeout=15).raise_for_status()
+    start = datetime.now() - timedelta(days=1)
+    end = datetime.now() + timedelta(days=days)
+    rows, page = [], 1
+    while page <= 10:
+        resp = session.get(f"{PCTC_BASE}/esvc/vessel/berthScheduleT/data",
+                           params={"startDate": start.strftime("%Y-%m-%d"), "endDate": end.strftime("%Y-%m-%d"),
+                                   "sort": "ETB", "page": page},
+                           headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
+        resp.raise_for_status()
+        j = resp.json()
+        for v in j.get("content") or []:
+            lane = (v.get("IN_LANE") or "").strip().upper()
+            if not lane.startswith(PCTC_LANES):
+                continue
+            eta, etd = _parse_dt(v.get("ATA") or ""), _parse_dt(v.get("ATD") or "")
+            if not eta or not etd:
+                continue
+            rows.append({
+                "source": "PCTC", "region": "평택", "terminal": "PCTC",
+                "berth": (v.get("BERTH_NO") or "").strip(),
+                "voyage": (v.get("OPR_VOY") or v.get("VOY_NO") or "").strip(),
+                "ship_name": (v.get("VSL_NM") or "").strip(),
+                "line": (v.get("PTNR_CODE") or "").strip(),
+                "route": lane, "eta": eta, "etd": etd,
+            })
+        if page >= int(j.get("totalPages") or 1):
+            break
+        page += 1
+    return rows
+
+
+def fetch_pctc_empty_status(carrier_code="DYS"):
+    """PCTC Empty 현황(선사코드별). DAMAGE 는 빼고 SOUND 만 센다.
+    화면 스크립트와 같은 기준: DMG_COND 가 'S' 이거나 비어 있으면 Sound. 크기 22=20', 42=40', 그 외(45)=40'HC."""
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    session.get(f"{PCTC_BASE}/esvc/yard/emptyStatus", timeout=15).raise_for_status()
+    resp = session.get(f"{PCTC_BASE}/esvc/yard/emptyStatus/data", params={"shippingCode": carrier_code},
+                       headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
+    resp.raise_for_status()
+    kinds = {"G0": ("GP20", "GP40", "HQ40"), "R0": ("RF20", "RF40", "RH40"), "U0": ("OT20", "OT40", "OH40"),
+             "P0": ("FL20", "FL40", "FL40"), "P1": ("FL20", "FL40", "FL40"), "T0": ("TK20", "TK40", "TK40")}
+    counts = {"GP20": 0, "GP40": 0, "HQ40": 0}
+    for r in resp.json():
+        if r.get("DMG_COND") not in ("S", None):
+            continue
+        keys = kinds.get(r.get("CON_TYPE"))
+        if not keys:
+            continue
+        size = str(r.get("CON_SIZE") or "")
+        key = keys[0] if size in ("20", "22") else keys[1] if size == "42" else keys[2]
+        counts[key] = counts.get(key, 0) + int(r.get("CNT") or 0)
+    return [{"carrier": carrier_code.upper(), "terminal": "PCTC", "counts": counts, "total": sum(counts.values())}]
+
+
+# ---------------------------------------------------------------------------
+# GCT (군산컨테이너터미널) - 군산항.  광양서부(GWCT)의 옛 e-service 와 같은 계열 화면이다.
+# ---------------------------------------------------------------------------
+GCT_URL = "http://www.igct.co.kr/e-service/"
+
+
+def _gct_post(data):
+    resp = requests.post(GCT_URL, data=data, headers=HEADERS, timeout=15)
+    resp.raise_for_status()
+    resp.encoding = "utf-8"
+    return BeautifulSoup(resp.text, "html.parser")
+
+
+def fetch_gct(time_range="month", carrier_code="DYS"):
+    """GCT 선석배정 목록에서 선사가 carrier_code 인 것만.
+    열: 선석|모선항차|선박명|접안|선사|입항|출항|작업시작|작업완료|반입마감|양하|선적|S/H|전배|항로"""
+    soup = _gct_post({"m": "B", "s": "2", "v_time": time_range, "range": "ETB", "screenPath": "", "callType": ""})
+    rows = []
+    for tr in soup.find_all("tr"):
+        cells = [td.get_text(strip=True) for td in tr.find_all("td", recursive=False)]
+        if len(cells) < 15 or cells[4].upper() != carrier_code.upper():
+            continue
+        eta, etd = _parse_dt(cells[5]), _parse_dt(cells[6])
+        if not eta or not etd:
+            continue
+        rows.append({
+            "source": "GCT", "region": "군산", "terminal": "GCT",
+            "berth": cells[0], "voyage": cells[1], "ship_name": cells[2],
+            "line": cells[4], "route": cells[14], "eta": eta, "etd": etd,
+        })
+    return rows
+
+
+def fetch_gct_empty_status(carrier_code="DYS"):
+    """GCT 선사별 컨테이너 SUMMARY 에서 DEPOT 칸의 S(Sound) 만. D(Damage) 는 뺀다.
+    한 행 = 구분 + [IMPORT|EXPORT|T/S](각 20G/40G/40H x F,E) 18칸 + DEPOT(20G/40G/40H x S,D) 6칸 + VAN,TEU."""
+    soup = _gct_post({"m": "F", "s": "1", "xls_mode": "", "ptnr_code": carrier_code, "screenPath": "", "callType": ""})
+    row_keys = {"GP": ("GP20", "GP40", "HQ40"), "RF": ("RF20", "RF40", "RH40"),
+                "OT": ("OT20", "OT40", "OH40"), "PL": ("FL20", "FL40", "FL40")}
+    counts, seen = {}, False
+    for tr in soup.find_all("tr"):
+        cells = [td.get_text(strip=True) for td in tr.find_all("td", recursive=False)]
+        if len(cells) < 27 or cells[0] not in row_keys:
+            continue
+        seen = True
+        num = lambda s: int(s.replace(",", "")) if s.replace(",", "").isdigit() else 0
+        for key, idx in zip(row_keys[cells[0]], (19, 21, 23)):       # 19,21,23 = DEPOT 의 S 칸 (20,22,24 는 D)
+            counts[key] = counts.get(key, 0) + num(cells[idx])
+    if not seen:
+        return []
+    return [{"carrier": carrier_code.upper(), "terminal": "GCT", "counts": counts, "total": sum(counts.values())}]
+
+
 # 여기에 사이트를 추가로 등록하세요. (이름, 함수)
 SOURCES = [
     ("BPTC (신선대/감만)", fetch_bptc),
@@ -863,6 +984,8 @@ SOURCES = [
     ("선광신항 (선광신컨테이너터미널)", fetch_snct),
     ("E1CT (E1컨테이너터미널)", fetch_e1ct),
     ("광양서부 (광양항서부컨테이너터미널)", fetch_gwct),
+    ("PCTC (한진평택컨테이너터미널)", fetch_pctc),
+    ("GCT (군산컨테이너터미널)", fetch_gct),
 ]
 
 
