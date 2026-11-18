@@ -3,6 +3,8 @@
 name: 선석현황 수집·게시
 
 on:
+  push:
+    branches: [main]            # 파일을 올리면 바로 한 번 실행
   schedule:
     - cron: "*/10 * * * *"        # UTC 기준 10분마다 (GitHub 사정으로 몇 분 늦어질 수 있음)
   workflow_dispatch:              # Actions 탭에서 수동 실행
@@ -27,10 +29,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r cloud/requirements.txt
+      - run: pip install requests certifi beautifulsoup4
       - name: 수집 → site/
         run: python build_static.py
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true      # Pages 가 꺼져 있으면 자동으로 켠다
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
