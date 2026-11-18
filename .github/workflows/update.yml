@@ -1,4 +1,4 @@
-# 10분마다 6개 터미널 선석현황을 수집해서 GitHub Pages 에 올린다.
+# 5분마다 6개 터미널 선석현황을 수집해서 GitHub Pages 에 올린다.
 # 주소: https://<GitHub아이디>.github.io/<저장소이름>/
 name: 선석현황 수집·게시
 
@@ -6,7 +6,7 @@ on:
   push:
     branches: [main]            # 파일을 올리면 바로 한 번 실행
   schedule:
-    - cron: "*/10 * * * *"        # UTC 기준 10분마다 (GitHub 사정으로 몇 분 늦어질 수 있음)
+    - cron: "*/5 * * * *"         # UTC 기준 5분마다 (GitHub 최소 주기) (GitHub 사정으로 몇 분 늦어질 수 있음)
   workflow_dispatch:              # Actions 탭에서 수동 실행
 
 permissions:
@@ -22,6 +22,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
+      BERTH_STATIC_REFRESH_SEC: "300"   # 화면의 "N분마다 자동 갱신" 표기
       TZ: Asia/Seoul              # 수집 기준일·갱신시각을 한국시간으로
     steps:
       - uses: actions/checkout@v4

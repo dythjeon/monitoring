@@ -63,7 +63,7 @@ run_web.bat
 
 ## GitHub Pages 로 인터넷 주소 만들기 (PC 꺼져 있어도 동작)
 
-GitHub Actions 가 10분마다 `build_static.py` 를 돌려 `site/data.json` 을 만들고 Pages 에 올린다.
+GitHub Actions 가 5분마다 `build_static.py` 를 돌려 `site/data.json` 을 만들고 Pages 에 올린다.
 서버가 없으므로 실시간 푸시/수동조회 버튼은 없고, 화면은 `./data.json` 을 읽는 정적 모드로 동작한다.
 
 최초 1회:

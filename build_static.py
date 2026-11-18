@@ -1,7 +1,7 @@
 """GitHub Pages 용 정적 사이트 생성.
 
 server.py 와 같은 수집 코드를 한 번만 돌려 site/data.json 을 만들고 index.html 을 옆에 복사한다.
-GitHub Actions 가 10분마다 이 파일을 실행하고 site/ 폴더를 Pages 에 올린다.
+GitHub Actions 가 5분마다 이 파일을 실행하고 site/ 폴더를 Pages 에 올린다.
 index.html 은 github.io 에서 열리면 /api/data 대신 ./data.json 을 읽는다(정적 모드).
 
 사용:  python build_static.py            -> site/ 폴더 생성
