@@ -191,7 +191,9 @@ footer { text-align: center; color: #b4b8c2; font-size: 11px; padding: 0 0 14px;
 .tf .form { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 .tf .fld { display: flex; flex-direction: column; gap: 5px; flex: 1 1 240px; max-width: 340px; }
 .tf .fld label { font-size: 11.5px; font-weight: 700; color: var(--muted); }
-.tf .fld input { border: 1px solid var(--table-line); border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 14px; outline: none; background: var(--card); color: var(--text); }
+.tf .fld input { text-transform: uppercase; border: 1px solid var(--table-line); border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 14px; outline: none; background: var(--card); color: var(--text); }
+.tf .fld input::placeholder { text-transform: none; }
+.tf .form .btn { padding: 11px 22px; }
 .tf .fld input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .tf .clr { border: 1px solid var(--border); background: var(--card); color: var(--muted); border-radius: 10px; padding: 10px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .tf .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
@@ -745,65 +747,97 @@ ${fmtN(v)}개 · ${pctTxt(v)}`;
 // ===================== Barge Tariff =====================
 // 요율은 tariff.enc.json (make_tariff.py 가 엑셀 2개를 읽어 사이트 비밀번호로 암호화한 파일)에서 읽는다.
 // 출발지(환적항)와 도착지를 코드나 이름으로 검색하면 Round(= Full + Empty) 비용을 보여준다.
-const TF = { data: null, err: "", loading: false, built: false };
+const TF = { data: null, err: "", loading: null, built: false, tried: false, needKey: false };
 const tfNorm = s => String(s || "").toUpperCase().replace(/[^0-9A-Z가-힣]/g, "");
-async function loadTariff() {
-  if (TF.loading || TF.data) return;
-  TF.loading = true; TF.err = "";
-  try {
-    const r = await fetch("./tariff.enc.json", { cache: "no-store" });
-    if (!r.ok) throw "요율 자료가 아직 올라오지 않았습니다 (PC 에서 tariff_update.bat 실행 필요)";
-    let j = await r.json();
-    if (j.enc) {
-      if (!memKey) throw "비밀번호로 잠긴 사이트에서만 요율을 볼 수 있습니다";
-      try { j = await decryptWith(memKey, j); }
-      catch { throw "요율 파일의 비밀번호가 사이트 비밀번호와 다릅니다 (tariff_update.bat 을 다시 실행해 주세요)"; }
-    }
-    TF.data = j;
-  } catch (e) { TF.err = typeof e === "string" ? e : "요율 자료를 읽을 수 없습니다"; }
-  TF.loading = false;
-  if (tab === "tariff") renderPane();
+const TF_HINT = `<div class="hint">출발지와 도착지를 입력하고 <b>Inquiry</b> 를 누르세요 · 예) 출발지 <b>HKHKG</b> / 도착지 <b>HUANGPU</b><br>코드나 이름 어느 쪽으로도 찾습니다 · 출발지만 넣으면 그 항에서 가는 전체 요율이 나옵니다</div>`;
+// 요율 파일을 한 번 읽는다. 실패하면 TF.err 에 이유를 남기고, 자동으로 다시 시도하지 않는다
+// (화면을 다시 그릴 때마다 재요청하면 요청이 끝없이 반복된다). 다시 시도는 Inquiry 를 누를 때만.
+function loadTariff() {
+  if (TF.data) return Promise.resolve();
+  if (TF.loading) return TF.loading;
+  TF.tried = true; TF.err = ""; TF.needKey = false;
+  TF.loading = (async () => {
+    try {
+      const r = await fetch("./tariff.enc.json", { cache: "no-store" });
+      if (!r.ok) throw "요율 자료가 아직 올라오지 않았습니다 (PC 에서 tariff_update.bat 실행 필요)";
+      let j = await r.json();
+      if (j.enc) {
+        if (!memKey) { TF.needKey = true; throw "비밀번호로 잠긴 사이트에서만 요율을 볼 수 있습니다"; }
+        try { j = await decryptWith(memKey, j); }
+        catch { throw "요율 파일의 비밀번호가 사이트 비밀번호와 다릅니다 (tariff_update.bat 을 다시 실행해 주세요)"; }
+      }
+      TF.data = j;
+    } catch (e) { TF.err = typeof e === "string" ? e : "요율 자료를 읽을 수 없습니다"; }
+    TF.loading = null;
+    tfChips();
+  })();
+  return TF.loading;
+}
+function tfChips() {
+  const chips = $("tfChips"); if (!chips || !TF.data) return;
+  const T = TF.data;
+  $("tfMeta").textContent = `Round = Full + Empty (20' + 20'E · 40' + 40'E) · 자료 ${T.made_at} 변환`;
+  chips.innerHTML = `<span class="m">출발지</span>` + Object.keys(T.origins).map(c =>
+    `<button type="button" class="chip" data-o="${c}">${c} · ${esc((T.origins[c] || [])[0] || c)}</button>`).join("");
+  chips.querySelectorAll(".chip").forEach(b => b.onclick = () => { $("tfO").value = b.dataset.o; $("tfD").focus(); });
+}
+async function tariffInquiry() {
+  const btn = $("tfGo");
+  if (!TF.data) {
+    btn.disabled = true; $("tfSum").innerHTML = "";
+    $("tfOut").innerHTML = `<div class="hint">조회 중...</div>`;
+    await loadTariff();
+    btn.disabled = false;
+  }
+  tariffSearch();
 }
 function renderTariff(pane) {
   if (!TF.built) {
     TF.built = true;
     const qs = new URLSearchParams(location.search);
-    pane.innerHTML = `<div class="tf"><div class="head"><h2>Barge Tariff</h2><span class="m" id="tfMeta"></span></div>
-      <div class="form">
-        <div class="fld"><label for="tfO">출발지 (환적항)</label><input id="tfO" placeholder="예: HKHKG 또는 HONG KONG" autocomplete="off" spellcheck="false"></div>
-        <div class="fld"><label for="tfD">도착지</label><input id="tfD" placeholder="예: CNHUA 또는 HUANGPU" autocomplete="off" spellcheck="false"></div>
+    pane.innerHTML = `<div class="tf"><div class="head"><h2>Barge Tariff</h2><span class="m" id="tfMeta">Round = Full + Empty (20' + 20'E · 40' + 40'E)</span></div>
+      <form class="form" id="tfForm" autocomplete="off">
+        <div class="fld"><label for="tfO">출발지 (환적항)</label><input id="tfO" placeholder="예: HKHKG 또는 HONG KONG" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
+        <div class="fld"><label for="tfD">도착지</label><input id="tfD" placeholder="예: CNHUA 또는 HUANGPU" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
+        <button type="submit" class="btn" id="tfGo">Inquiry</button>
         <button type="button" class="clr" id="tfClr">지우기</button>
-      </div>
+      </form>
       <div class="chips" id="tfChips"></div>
       <div class="sum" id="tfSum"></div>
-      <div id="tfOut"></div></div>`;
-    $("tfO").value = qs.get("o") || ""; $("tfD").value = qs.get("d") || "";
-    let t; const go = () => { clearTimeout(t); t = setTimeout(tariffSearch, 120); };
-    $("tfO").oninput = go; $("tfD").oninput = go;
-    $("tfClr").onclick = () => { $("tfO").value = ""; $("tfD").value = ""; tariffSearch(); $("tfO").focus(); };
+      <div id="tfOut">${TF_HINT}</div></div>`;
+    // 입력은 항상 대문자로. 한글 조합 중에는 값을 건드리면 입력이 깨지므로 건너뛴다.
+    const upper = (ev) => {
+      const el = ev.target; if (ev.isComposing) return;
+      const u = el.value.toUpperCase(); if (u === el.value) return;
+      const s = el.selectionStart, e = el.selectionEnd; el.value = u; el.setSelectionRange(s, e);
+    };
+    $("tfO").oninput = upper; $("tfD").oninput = upper;
+    $("tfO").value = (qs.get("o") || "").toUpperCase(); $("tfD").value = (qs.get("d") || "").toUpperCase();
+    $("tfForm").onsubmit = (ev) => { ev.preventDefault(); tariffInquiry(); };
+    $("tfClr").onclick = () => { $("tfO").value = ""; $("tfD").value = ""; $("tfSum").innerHTML = ""; $("tfOut").innerHTML = TF_HINT; $("tfO").focus(); };
+    TF.auto = !!($("tfO").value || $("tfD").value);       // 링크(?o=..&d=..)로 들어온 경우 바로 조회
   }
-  if (!TF.data && (!TF.err || memKey)) loadTariff();
-  tariffSearch();
+  // 탭을 열면 요율을 조용히 미리 읽어 둔다(출발지 버튼 표시용). 잠금 해제 전에 열려 실패했으면 해제 후 한 번 더.
+  if (!TF.data && !TF.loading && (!TF.tried || (TF.needKey && memKey))) {
+    loadTariff().then(() => { if (TF.auto && TF.data) { TF.auto = false; tariffSearch(); } });
+  }
 }
 function tariffSearch() {
   const out = $("tfOut"), sum = $("tfSum"), chips = $("tfChips");
   if (!out) return;
   if (!TF.data) {
-    chips.innerHTML = ""; sum.innerHTML = "";
-    out.innerHTML = `<div class="hint">${TF.err ? esc(TF.err) : "요율 자료를 불러오는 중..."}</div>`;
+    sum.innerHTML = "";
+    out.innerHTML = `<div class="hint">${esc(TF.err || "요율 자료를 읽을 수 없습니다")}</div>`;
     return;
   }
   const T = TF.data, origins = Object.keys(T.origins);
-  $("tfMeta").textContent = `Round = Full + Empty (20' + 20'E · 40' + 40'E) · 자료 ${T.made_at} 변환`;
   const qo = tfNorm($("tfO").value), qd = tfNorm($("tfD").value);
   const oName = c => (T.origins[c] || [])[0] || c;
   const hit = qo ? origins.filter(c => tfNorm(c).includes(qo) || (T.origins[c] || []).some(a => tfNorm(a).includes(qo))) : origins;
-  chips.innerHTML = `<span class="m">출발지</span>` + origins.map(c =>
-    `<button type="button" class="chip${qo && hit.length === 1 && hit[0] === c ? " on" : ""}" data-o="${c}">${c} · ${esc(oName(c))}</button>`).join("");
-  chips.querySelectorAll(".chip").forEach(b => b.onclick = () => { $("tfO").value = b.dataset.o; tariffSearch(); $("tfD").focus(); });
+  chips.querySelectorAll(".chip").forEach(b => b.classList.toggle("on", !!qo && hit.length === 1 && hit[0] === b.dataset.o));
   if (!qo && !qd) {
     sum.innerHTML = "";
-    out.innerHTML = `<div class="hint">출발지와 도착지를 코드나 이름으로 검색하세요 · 예) 출발지 <b>HKHKG</b> / 도착지 <b>HUANGPU</b><br>출발지만 넣으면 그 항에서 가는 전체 요율이 나옵니다 · 전체 ${fmtN(T.rows.length)}건</div>`;
+    out.innerHTML = `<div class="hint">출발지나 도착지를 하나 이상 입력해 주세요</div>`;
     return;
   }
   if (!hit.length) { sum.innerHTML = ""; out.innerHTML = `<div class="hint">"${esc($("tfO").value)}" 에 해당하는 출발지가 없습니다</div>`; return; }
