@@ -8,3 +8,7 @@ build_share/
 BerthMonitor.spec
 site/
 *.bak_*
+
+# Barge 요율 원본·평문은 올리지 않는다 (암호화된 tariff.enc.json 만 올림)
+*.xlsx
+tariff.json

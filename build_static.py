@@ -62,6 +62,8 @@ def main():
         json.dump(encrypt_payload(payload, password) if password else payload, f, ensure_ascii=False)
     shutil.copyfile(os.path.join(HERE, "index.html"), os.path.join(OUT, "index.html"))
     shutil.copyfile(os.path.join(HERE, "coast.json"), os.path.join(OUT, "coast.json"))
+    if os.path.exists(os.path.join(HERE, "tariff.enc.json")):        # Barge 요율(make_tariff.py 가 암호화해 둔 것)
+        shutil.copyfile(os.path.join(HERE, "tariff.enc.json"), os.path.join(OUT, "tariff.enc.json"))
     open(os.path.join(OUT, ".nojekyll"), "w").close()
     # claude.ai 아티팩트용: 게시 시 문서 뼈대(doctype/html/head/body)를 호스트가 씌우므로 벗겨낸 본문만 둔다.
     with open(os.path.join(HERE, "index.html"), encoding="utf-8") as f:

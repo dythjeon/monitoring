@@ -183,6 +183,37 @@ table.et tfoot td.tot { color: var(--primary); font-size: 16px; }
 footer { text-align: center; color: #b4b8c2; font-size: 11px; padding: 0 0 14px; }
 .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: #1c1f26; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; }
 .toast.on { opacity: 1; }
+/* ---- Barge Tariff ---- */
+.tf { padding: 6px 10px 10px; display: flex; flex-direction: column; min-height: 0; }
+.tf .head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; padding: 0 2px; flex-wrap: wrap; }
+.tf .head h2 { margin: 0; font-size: 16px; }
+.tf .head .m, .tf .m { color: var(--muted); font-size: 12px; }
+.tf .form { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.tf .fld { display: flex; flex-direction: column; gap: 5px; flex: 1 1 240px; max-width: 340px; }
+.tf .fld label { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.tf .fld input { border: 1px solid var(--table-line); border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 14px; outline: none; background: var(--card); color: var(--text); }
+.tf .fld input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.tf .clr { border: 1px solid var(--border); background: var(--card); color: var(--muted); border-radius: 10px; padding: 10px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.tf .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
+.tf .chip { border: 1px solid var(--border); background: var(--card); border-radius: 999px; padding: 4px 11px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--text); }
+.tf .chip:hover, .tf .chip.on { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+.tf .sum { margin: 16px 2px 8px; font-size: 12.5px; color: var(--muted); display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: baseline; }
+.tf .sum b { color: var(--text); }
+.tf .wrap { overflow: auto; border: 1px solid var(--border); border-radius: 12px; }
+.tf table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.tf th { position: sticky; top: 0; background: var(--bg); color: var(--muted); font-size: 11.5px; font-weight: 700; text-align: left; padding: 9px 12px; white-space: nowrap; z-index: 1; }
+.tf td { padding: 9px 12px; border-top: 1px solid var(--border); vertical-align: middle; }
+.tf tbody tr:hover { background: var(--hover-row); }
+.tf th.r, .tf td.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tf td.rd { font-weight: 700; font-size: 14px; }
+.tf td.rd small { font-weight: 500; color: var(--muted); font-size: 11px; margin-right: 4px; }
+.tf td.dt { color: var(--muted); font-size: 12px; }
+.tf td .cd { color: var(--muted); font-size: 11.5px; margin-left: 6px; font-variant-numeric: tabular-nums; }
+.tf td.rm { color: var(--muted); font-size: 11.5px; }
+.tf tr.grp td { border-top: 2px solid var(--table-line); }
+.tf .best { display: inline-block; border-radius: 999px; padding: 1px 7px; font-size: 10.5px; font-weight: 700; background: var(--primary-soft); color: var(--primary); margin-left: 6px; vertical-align: 1px; }
+.tf .tag { display: inline-block; border-radius: 6px; padding: 1px 6px; font-size: 10.5px; font-weight: 700; background: var(--bg); color: var(--muted); margin-right: 5px; }
+.tf .hint { padding: 34px 16px; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.8; }
 /* ---- 비밀번호 잠금 화면 ---- */
 .gate { position: fixed; inset: 0; z-index: 1000; background: var(--bg); display: none; align-items: center; justify-content: center; padding: 20px; }
 .gate.on { display: flex; }
@@ -235,6 +266,7 @@ footer { text-align: center; color: #b4b8c2; font-size: 11px; padding: 0 0 14px;
     <div class="pane" data-pane="work" id="workPane"></div>
     <div class="pane" data-pane="empty" id="emptyPane"></div>
     <div class="pane" data-pane="typhoon" id="typhoonPane"></div>
+    <div class="pane" data-pane="tariff" id="tariffPane"></div>
   </div>
 </main>
 <footer>BerthMonitor Web · 터미널 사이트에서 수집한 자료이며 실제 작업 일정과 다를 수 있습니다<div style="margin-top:6px;font-weight:600;letter-spacing:.04em">Powered by THJEON</div></footer>
@@ -263,7 +295,7 @@ const COUNTRY_KEYS = ["일본", "중국"];
 const COUNTRY_COLOR = { "일본": "#e64980", "중국": "#7048e8", "동남아": "#00b8d4", "러시아": "#12b886" };
 const TAB_KEYS = ["전체", "부산", "인천", "광양"];
 const TABS = [["전체", "전체"], ["부산", "부산항"], ["인천", "인천항"], ["광양", "광양항"],
-              ["work", "본선작업현황"], ["empty", "국내공컨현황"], ["typhoon", "태풍 모니터링"]];
+              ["work", "본선작업현황"], ["empty", "국내공컨현황"], ["typhoon", "태풍 모니터링"], ["tariff", "Barge Tariff"]];
 const EMPTY_GROUPS = [["DC", [["GP20", "20'"], ["GP40", "40'"], ["HQ40", "4H"]]],
                       ["OT", [["OT20", "20'"], ["OT40", "40'"]]],
                       ["FR", [["FL20", "20'"], ["FL40", "40'"]]],
@@ -710,6 +742,114 @@ ${fmtN(v)}개 · ${pctTxt(v)}`;
   return `<div class="pie">${svg}<div><div class="lb">${esc(title)}</div><div class="lg">${lg}</div></div></div>`;
 }
 
+// ===================== Barge Tariff =====================
+// 요율은 tariff.enc.json (make_tariff.py 가 엑셀 2개를 읽어 사이트 비밀번호로 암호화한 파일)에서 읽는다.
+// 출발지(환적항)와 도착지를 코드나 이름으로 검색하면 Round(= Full + Empty) 비용을 보여준다.
+const TF = { data: null, err: "", loading: false, built: false };
+const tfNorm = s => String(s || "").toUpperCase().replace(/[^0-9A-Z가-힣]/g, "");
+async function loadTariff() {
+  if (TF.loading || TF.data) return;
+  TF.loading = true; TF.err = "";
+  try {
+    const r = await fetch("./tariff.enc.json", { cache: "no-store" });
+    if (!r.ok) throw "요율 자료가 아직 올라오지 않았습니다 (PC 에서 tariff_update.bat 실행 필요)";
+    let j = await r.json();
+    if (j.enc) {
+      if (!memKey) throw "비밀번호로 잠긴 사이트에서만 요율을 볼 수 있습니다";
+      try { j = await decryptWith(memKey, j); }
+      catch { throw "요율 파일의 비밀번호가 사이트 비밀번호와 다릅니다 (tariff_update.bat 을 다시 실행해 주세요)"; }
+    }
+    TF.data = j;
+  } catch (e) { TF.err = typeof e === "string" ? e : "요율 자료를 읽을 수 없습니다"; }
+  TF.loading = false;
+  if (tab === "tariff") renderPane();
+}
+function renderTariff(pane) {
+  if (!TF.built) {
+    TF.built = true;
+    const qs = new URLSearchParams(location.search);
+    pane.innerHTML = `<div class="tf"><div class="head"><h2>Barge Tariff</h2><span class="m" id="tfMeta"></span></div>
+      <div class="form">
+        <div class="fld"><label for="tfO">출발지 (환적항)</label><input id="tfO" placeholder="예: HKHKG 또는 HONG KONG" autocomplete="off" spellcheck="false"></div>
+        <div class="fld"><label for="tfD">도착지</label><input id="tfD" placeholder="예: CNHUA 또는 HUANGPU" autocomplete="off" spellcheck="false"></div>
+        <button type="button" class="clr" id="tfClr">지우기</button>
+      </div>
+      <div class="chips" id="tfChips"></div>
+      <div class="sum" id="tfSum"></div>
+      <div id="tfOut"></div></div>`;
+    $("tfO").value = qs.get("o") || ""; $("tfD").value = qs.get("d") || "";
+    let t; const go = () => { clearTimeout(t); t = setTimeout(tariffSearch, 120); };
+    $("tfO").oninput = go; $("tfD").oninput = go;
+    $("tfClr").onclick = () => { $("tfO").value = ""; $("tfD").value = ""; tariffSearch(); $("tfO").focus(); };
+  }
+  if (!TF.data && (!TF.err || memKey)) loadTariff();
+  tariffSearch();
+}
+function tariffSearch() {
+  const out = $("tfOut"), sum = $("tfSum"), chips = $("tfChips");
+  if (!out) return;
+  if (!TF.data) {
+    chips.innerHTML = ""; sum.innerHTML = "";
+    out.innerHTML = `<div class="hint">${TF.err ? esc(TF.err) : "요율 자료를 불러오는 중..."}</div>`;
+    return;
+  }
+  const T = TF.data, origins = Object.keys(T.origins);
+  $("tfMeta").textContent = `Round = Full + Empty (20' + 20'E · 40' + 40'E) · 자료 ${T.made_at} 변환`;
+  const qo = tfNorm($("tfO").value), qd = tfNorm($("tfD").value);
+  const oName = c => (T.origins[c] || [])[0] || c;
+  const hit = qo ? origins.filter(c => tfNorm(c).includes(qo) || (T.origins[c] || []).some(a => tfNorm(a).includes(qo))) : origins;
+  chips.innerHTML = `<span class="m">출발지</span>` + origins.map(c =>
+    `<button type="button" class="chip${qo && hit.length === 1 && hit[0] === c ? " on" : ""}" data-o="${c}">${c} · ${esc(oName(c))}</button>`).join("");
+  chips.querySelectorAll(".chip").forEach(b => b.onclick = () => { $("tfO").value = b.dataset.o; tariffSearch(); $("tfD").focus(); });
+  if (!qo && !qd) {
+    sum.innerHTML = "";
+    out.innerHTML = `<div class="hint">출발지와 도착지를 코드나 이름으로 검색하세요 · 예) 출발지 <b>HKHKG</b> / 도착지 <b>HUANGPU</b><br>출발지만 넣으면 그 항에서 가는 전체 요율이 나옵니다 · 전체 ${fmtN(T.rows.length)}건</div>`;
+    return;
+  }
+  if (!hit.length) { sum.innerHTML = ""; out.innerHTML = `<div class="hint">"${esc($("tfO").value)}" 에 해당하는 출발지가 없습니다</div>`; return; }
+  const hs = new Set(hit);
+  const rnd = (a, b) => (a == null || b == null) ? null : a + b;
+  let rows = T.rows.filter(r => hs.has(r.origin) && (!qd || tfNorm(r.code).includes(qd) || tfNorm(r.name).includes(qd)))
+    .map(r => ({ ...r, r20: rnd(r.f20, r.e20), r40: rnd(r.f40, r.e40), gk: [r.origin, r.code || r.name, r.name, r.bound || "", r.cur || "USD"].join("|") }));
+  if (!rows.length) { sum.innerHTML = ""; out.innerHTML = `<div class="hint">조건에 맞는 요율이 없습니다</div>`; return; }
+  const big = 1e12;
+  rows.sort((a, b) => origins.indexOf(a.origin) - origins.indexOf(b.origin) || a.name.localeCompare(b.name) || a.gk.localeCompare(b.gk)
+    || (a.r20 ?? big) - (b.r20 ?? big) || (a.r40 ?? big) - (b.r40 ?? big));
+  const min20 = {}, min40 = {}, cnt = {};
+  for (const r of rows) {
+    cnt[r.gk] = (cnt[r.gk] || 0) + 1;
+    if (r.r20 != null) min20[r.gk] = Math.min(min20[r.gk] ?? big, r.r20);
+    if (r.r40 != null) min40[r.gk] = Math.min(min40[r.gk] ?? big, r.r40);
+  }
+  const total = rows.length, LIMIT = 400;
+  rows = rows.slice(0, LIMIT);
+  const money = v => v == null ? "–" : (Math.abs(v - Math.round(v)) < 0.005 ? fmtN(Math.round(v)) : v.toFixed(2));
+  const cur = r => r.cur === "RMB" ? "RMB" : "US$";
+  const rd = (r, v, mn) => v == null ? `<td class="r rd" style="color:var(--muted)">–</td>`
+    : `<td class="r rd"><small>${cur(r)}</small>${money(v)}${cnt[r.gk] > 1 && mn === v ? `<span class="best">최저</span>` : ""}</td>`;
+  const dt = (f, e) => `<td class="r dt">${money(f)} + ${money(e)}</td>`;
+  let h = `<div class="wrap"><table><thead><tr><th>출발지</th><th>도착지</th><th>Barge사</th><th class="r">20' Round</th><th class="r">40' Round</th>
+    <th class="r">20' Full + Empty</th><th class="r">40' Full + Empty</th><th>비고</th></tr></thead><tbody>`;
+  let prev = null;
+  for (const r of rows) {
+    const tags = [], rm = [];
+    if (r.bound) tags.push(`<span class="tag">${esc(r.bound)}</span>`);
+    if (r.mode) tags.push(`<span class="tag">${esc(r.mode)}</span>`);
+    if (r.ts && r.ts.length) rm.push(`T/S RMB ${esc(r.ts.join(" / "))}`);
+    if (r.eq && r.eq.some(x => x && x !== "/")) rm.push(`EQ ${esc(r.eq.join(" / "))}`);
+    if (r.valid) rm.push(esc(r.valid));
+    if (r.remark) rm.push(esc(r.remark));
+    h += `<tr class="${prev !== null && prev !== r.gk ? "grp" : ""}"><td>${r.origin}<span class="cd">${esc(oName(r.origin))}</span></td>
+      <td><b>${esc(r.name)}</b>${r.code ? `<span class="cd">${esc(r.code)}</span>` : ""}</td><td>${esc(r.company)}</td>
+      ${rd(r, r.r20, min20[r.gk])}${rd(r, r.r40, min40[r.gk])}${dt(r.f20, r.e20)}${dt(r.f40, r.e40)}<td class="rm">${tags.join("")}${rm.join(" · ")}</td></tr>`;
+    prev = r.gk;
+  }
+  h += `</tbody></table></div>`;
+  sum.innerHTML = `<span><b>${fmtN(total)}</b>건</span>${total > LIMIT ? `<span>앞 ${LIMIT}건만 표시 · 도착지를 더 입력해 좁혀 보세요</span>` : ""}
+    <span>도착지별로 20' Round 가 싼 순서 · 한쪽 요율이 없으면(N/A) Round 는 –</span>`;
+  out.innerHTML = h;
+}
+
 // ===================== 태풍 모니터링 =====================
 // 지도는 외부 타일 없이 coast.json(Natural Earth 50m 해안선)을 직접 그린다.
 const TY_VIEW = { lon0: 98, lon1: 162, lat0: 2, lat1: 52 };      // 베트남 ~ 러시아 극동 ~ 서태평양
@@ -954,12 +1094,13 @@ function tySideHTML(T, storms, goneN) {
 // ===================== 렌더 진입 =====================
 function renderPane() {
   for (const p of document.querySelectorAll(".pane")) p.classList.remove("on");
-  const paneKey = tab === "work" ? "work" : tab === "empty" ? "empty" : tab === "typhoon" ? "typhoon" : "gantt";
+  const paneKey = tab === "work" ? "work" : tab === "empty" ? "empty" : tab === "typhoon" ? "typhoon" : tab === "tariff" ? "tariff" : "gantt";
   const pane = $(paneKey + "Pane"); pane.classList.add("on");
   hideTip();
   if (paneKey === "gantt") renderGantt(pane, tab);
   else if (paneKey === "work") renderWork(pane);
   else if (paneKey === "typhoon") renderTyphoon(pane);
+  else if (paneKey === "tariff") renderTariff(pane);
   else renderEmpty(pane);
 }
 function renderAll() {
@@ -1082,7 +1223,7 @@ new ResizeObserver(() => {
   if (Math.abs(h - lastCardH) < 2) return;
   lastCardH = h; clearTimeout(resizeT); resizeT = setTimeout(renderPane, 150);
 }).observe($("card"));
-setInterval(() => { renderNextChip(); if (tab !== "work" && tab !== "empty" && tab !== "typhoon") renderPane(); }, 60000);   // 현재 시각선 1분마다
+setInterval(() => { renderNextChip(); if (tab !== "work" && tab !== "empty" && tab !== "typhoon" && tab !== "tariff") renderPane(); }, 60000);   // 현재 시각선 1분마다
 setInterval(loadData, STATIC ? 60000 : 180000);                                                                           // SSE 가 끊겨도 3분마다 보정
 document.addEventListener("visibilitychange", () => { if (!document.hidden) loadData(); });
 
