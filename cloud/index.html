@@ -177,7 +177,7 @@ footer { text-align: center; color: #b4b8c2; font-size: 11px; padding: 0 0 14px;
     <div class="pane" data-pane="empty" id="emptyPane"></div>
   </div>
 </main>
-<footer>BerthMonitor Web · 터미널 사이트에서 수집한 자료이며 실제 작업 일정과 다를 수 있습니다</footer>
+<footer>BerthMonitor Web · 터미널 사이트에서 수집한 자료이며 실제 작업 일정과 다를 수 있습니다<div style="margin-top:6px;font-weight:600;letter-spacing:.04em">powered by THJEON</div></footer>
 <div class="tip" id="tip"></div>
 <div class="toast" id="toast"></div>
 
@@ -627,12 +627,15 @@ function renderAll() {
 // ===================== 데이터/실시간 =====================
 // 정적 모드: GitHub Pages 처럼 server.py 없이 올라간 경우. build_static.py 가 만든
 // ./data.json 을 읽고, SSE/수동조회는 없다(GitHub Actions 가 10분마다 새로 올림).
-const STATIC = location.hostname.endsWith("github.io") || location.protocol === "file:"
-            || location.search.includes("static");
-const DATA_URL = STATIC ? "./data.json" : "/api/data";
+let STATIC = location.hostname.endsWith("github.io") || location.protocol === "file:"
+          || /claude|anthropic/.test(location.hostname) || location.search.includes("static");
 async function loadData() {
   try {
-    const r = await fetch(DATA_URL, { cache: "no-store" });
+    let r = await fetch(STATIC ? "./data.json" : "/api/data", { cache: "no-store" }).catch(() => null);
+    if (!STATIC && (!r || !r.ok)) {        // server.py 가 없는 호스트면 정적 파일로 넘어간다
+      r = await fetch("./data.json", { cache: "no-store" });
+      if (r.ok) { STATIC = true; $("live").style.display = "none"; }
+    }
     const j = await r.json();
     j.data = (j.data || []).map(d => ({ ...d, eta: parseDT(d.eta), etd: parseDT(d.etd) }));
     if (STATIC) { delete j.server_now; j.fetching = false; }   // 파일 생성 시각은 현재 시각이 아니다
@@ -656,7 +659,7 @@ function connectSSE() {
   };
 }
 $("refreshBtn").onclick = async () => {
-  if (STATIC) { await loadData(); toast("GitHub 가 10분마다 자동으로 새로 올립니다. 최신 파일을 다시 읽었습니다"); return; }
+  if (STATIC) { await loadData(); toast("10분마다 자동으로 갱신됩니다. 최신 데이터를 다시 읽었습니다"); return; }
   try {
     const r = await fetch("/api/refresh", { method: "POST" });
     const j = await r.json();
