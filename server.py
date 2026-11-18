@@ -29,6 +29,7 @@ from scraper import (SOURCES, fetch_all, fetch_bptc_work_status, fetch_bptc_empt
                      fetch_gwct_empty_status, fetch_e1ct_empty_status, fetch_hjit_empty_status,
                      lane_of, LANE_COUNTRY, LANE_BY_BOUND)
 import re
+from typhoon import fetch_typhoons
 
 try:                                   # 한글 콘솔 출력 깨짐 방지
     sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
@@ -76,6 +77,7 @@ STATE = {
     "updated_at": None,
     "fetching": False,
     "data": [], "work": [], "empty": [], "errors": [], "stats": [],
+    "typhoons": None,          # typhoon.fetch_typhoons() 결과 (태풍 탭)
 }
 LOCK = threading.Lock()
 WAKE = threading.Event()           # 수동 새로고침 요청이 오면 깨운다
@@ -114,6 +116,14 @@ def collect():
         except Exception as e:
             errors = list(errors) + [f"{label}: {e}"]
 
+    try:
+        typhoons = fetch_typhoons()
+        for e in typhoons.get("errors", []):
+            errors = list(errors) + [f"태풍: {e}"]
+    except Exception as e:
+        typhoons = None
+        errors = list(errors) + [f"태풍: {e}"]
+
     rows = []
     for d in data:
         info = lane_of(d.get("ship_name"))
@@ -127,7 +137,7 @@ def collect():
             "country": _classify_country(d),
         })
     work_rows = [dict(w, eta=_iso(w.get("eta")), etd=_iso(w.get("etd"))) for w in work]
-    return rows, work_rows, empty, errors, [list(s) for s in stats]
+    return rows, work_rows, empty, errors, [list(s) for s in stats], typhoons
 
 
 def refresh_once():
@@ -140,9 +150,9 @@ def refresh_once():
     _notify({"type": "fetching"})
     t0 = time.time()
     try:
-        rows, work, empty, errors, stats = collect()
+        rows, work, empty, errors, stats, typhoons = collect()
         with LOCK:
-            STATE.update(data=rows, work=work, empty=empty, errors=errors, stats=stats,
+            STATE.update(data=rows, work=work, empty=empty, errors=errors, stats=stats, typhoons=typhoons,
                          updated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             STATE["generation"] += 1
             gen = STATE["generation"]
@@ -201,6 +211,9 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             with open(os.path.join(HERE, "index.html"), "rb") as f:
                 self._send(200, f.read(), "text/html; charset=utf-8")
+        elif path == "/coast.json":
+            with open(os.path.join(HERE, "coast.json"), "rb") as f:
+                self._send(200, f.read(), "application/json; charset=utf-8")
         elif path == "/api/data":
             with LOCK:
                 payload = dict(STATE, refresh_sec=REFRESH_SEC,

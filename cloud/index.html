@@ -132,6 +132,37 @@ table.et tfoot td.tot { color: var(--primary); font-size: 16px; }
 .share .lg span.c { color: var(--muted); margin-left: 7px; }
 .share .lg i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 
+/* ---- 태풍 모니터링 ---- */
+.ty { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; padding: 2px; align-items: start; }
+.ty-map { position: relative; background: #d9e6f2; border-radius: 14px; overflow: hidden; border: 1px solid var(--border); min-height: 360px; }
+.ty-map svg { display: block; width: 100%; height: auto; }
+.ty-map .legend { position: absolute; left: 10px; bottom: 10px; display: flex; flex-wrap: wrap; gap: 4px 10px; background: rgba(255,255,255,.88); border-radius: 10px; padding: 7px 10px; font-size: 11px; color: var(--text); backdrop-filter: blur(4px); max-width: calc(100% - 20px); }
+.ty-map .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.ty-map .legend .fc { width: 14px; height: 0; border-top: 2px dashed #555; border-radius: 0; vertical-align: 3px; }
+.ty-map .stamp { position: absolute; right: 10px; top: 10px; font-size: 11px; color: var(--muted); background: rgba(255,255,255,.85); border-radius: 8px; padding: 4px 8px; }
+.ty-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ty-side h2 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.ty-side .m { color: var(--muted); font-size: 11.5px; }
+.ty-quiet { background: var(--bg); border-radius: 14px; padding: 18px 16px; text-align: center; }
+.ty-quiet .big { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+.ty-storm { border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow); background: var(--card); }
+.ty-storm.dim { opacity: .72; }
+.ty-storm .nm { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ty-storm .nm b { font-size: 15px; }
+.ty-storm .nm .en { color: var(--muted); font-size: 12px; font-weight: 500; }
+.pill { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 700; color: #fff; }
+.pill.ghost { background: var(--bg); color: var(--muted); }
+.ty-storm .kv { display: grid; grid-template-columns: 64px 1fr; gap: 3px 10px; margin-top: 9px; font-size: 12.5px; }
+.ty-storm .kv span:nth-child(odd) { color: var(--muted); }
+.ty-storm .links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.lnk { display: inline-block; border: 1px solid var(--border); border-radius: 8px; padding: 4px 9px; font-size: 11.5px; color: var(--primary-dark); text-decoration: none; background: var(--card); }
+.lnk:hover { background: var(--primary-soft); }
+.ty-src { border-top: 1px solid var(--border); padding-top: 10px; }
+.ty-src .lb { font-size: 11.5px; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
+.ty-src .row { display: flex; flex-wrap: wrap; gap: 6px; }
+.ty-err { font-size: 11px; color: var(--now); white-space: pre-wrap; }
+@media (max-width: 980px) { .ty { grid-template-columns: 1fr; } }
+
 footer { text-align: center; color: #b4b8c2; font-size: 11px; padding: 0 0 14px; }
 .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: #1c1f26; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; }
 .toast.on { opacity: 1; }
@@ -175,9 +206,10 @@ footer { text-align: center; color: #b4b8c2; font-size: 11px; padding: 0 0 14px;
     <div class="pane" data-pane="gantt" id="ganttPane"></div>
     <div class="pane" data-pane="work" id="workPane"></div>
     <div class="pane" data-pane="empty" id="emptyPane"></div>
+    <div class="pane" data-pane="typhoon" id="typhoonPane"></div>
   </div>
 </main>
-<footer>BerthMonitor Web · 터미널 사이트에서 수집한 자료이며 실제 작업 일정과 다를 수 있습니다<div style="margin-top:6px;font-weight:600;letter-spacing:.04em">powered by THJEON</div></footer>
+<footer>BerthMonitor Web · 터미널 사이트에서 수집한 자료이며 실제 작업 일정과 다를 수 있습니다<div style="margin-top:6px;font-weight:600;letter-spacing:.04em">Powered by THJEON</div></footer>
 <div class="tip" id="tip"></div>
 <div class="toast" id="toast"></div>
 
@@ -193,7 +225,7 @@ const COUNTRY_KEYS = ["일본", "중국"];
 const COUNTRY_COLOR = { "일본": "#e64980", "중국": "#7048e8", "동남아": "#00b8d4", "러시아": "#12b886" };
 const TAB_KEYS = ["전체", "부산", "인천", "광양"];
 const TABS = [["전체", "전체"], ["부산", "부산항"], ["인천", "인천항"], ["광양", "광양항"],
-              ["work", "본선작업현황"], ["empty", "국내공컨현황"]];
+              ["work", "본선작업현황"], ["empty", "국내공컨현황"], ["typhoon", "태풍 모니터링"]];
 const EMPTY_GROUPS = [["DC", [["GP20", "20'"], ["GP40", "40'"], ["HQ40", "4H"]]],
                       ["OT", [["OT20", "20'"], ["OT40", "40'"]]],
                       ["FR", [["FL20", "20'"], ["FL40", "40'"]]],
@@ -607,14 +639,220 @@ function renderEmpty(pane) {
   if (!S.empty.length) { const m = document.createElement("div"); m.className = "empty-msg"; m.textContent = S.updated_at ? "" : "불러오는 중..."; pane.appendChild(m); }
 }
 
+// ===================== 태풍 모니터링 =====================
+// 지도는 외부 타일 없이 coast.json(Natural Earth 50m 해안선)을 직접 그린다.
+const TY_VIEW = { lon0: 98, lon1: 162, lat0: 2, lat1: 52 };      // 베트남 ~ 러시아 극동 ~ 서태평양
+const TY_YSCALE = 1.12;                                           // 중위도에서 모양이 덜 눌리게
+const TY_CAT = { TD: ["열대저압부", "#7c8aa5"], TS: ["열대폭풍", "#22a06b"], STS: ["강한 열대폭풍", "#d99a12"],
+                 TY: ["태풍(중)", "#ef6a1f"], STY: ["태풍(강)", "#dc2f2f"], VTY: ["매우 강·초강력", "#8a2bd1"] };
+const TY_LABELS = [["한국", 127.6, 36.2], ["북한", 126.8, 39.8], ["일본", 137.6, 36.2], ["중국", 109.5, 33.5],
+                   ["러시아", 133.0, 47.5], ["베트남", 105.3, 19.0], ["대만", 121.0, 23.7], ["필리핀", 122.3, 12.3],
+                   ["몽골", 104.5, 46.5], ["태국", 101.0, 15.5], ["라오스", 103.2, 19.5], ["캄보디아", 105.0, 12.4],
+                   ["남중국해", 114.5, 15.0], ["동중국해", 125.5, 29.0],
+                   ["동해", 134.5, 40.0], ["서해", 124.0, 36.5], ["필리핀해", 134.0, 17.5], ["태평양", 151.0, 30.0]];
+const TY_SEA = new Set(["남중국해", "동중국해", "동해", "서해", "필리핀해", "태평양"]);
+const TY_PORTS = [["부산", 129.04, 35.10, 1], ["인천", 126.62, 37.46, 1], ["광양", 127.70, 34.90, -1]];   // 마지막: 라벨 방향
+const TY_FC_RADIUS_KM = { 12: 60, 24: 110, 36: 160, 48: 210, 60: 270, 72: 330, 96: 450, 120: 560 };   // 예보원 반경(근사)
+let COAST = null, coastLoading = null;
+function loadCoast() {
+  if (COAST) return Promise.resolve(COAST);
+  return coastLoading ||= fetch("./coast.json").then(r => r.json()).then(c => (COAST = c))
+    .catch(() => { coastLoading = null; return null; });
+}
+const ktToMs = (k) => Math.round(k * 0.5144);
+function tyTime(iso) {               // 자료는 UTC. 보는 PC 시각(한국이면 KST)으로
+  if (!iso) return "-";
+  const d = new Date(iso.endsWith("Z") ? iso : iso + "Z");
+  return isNaN(d) ? iso : `${d.getMonth() + 1}/${d.getDate()}(${WD[d.getDay()]}) ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+function dirKo(deg) {
+  if (deg == null) return "-";
+  const n = ["북", "북북동", "북동", "동북동", "동", "동남동", "남동", "남남동", "남", "남남서", "남서", "서남서", "서", "서북서", "북서", "북북서"];
+  return n[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
+}
+const fmtLat = (v) => `${Math.abs(v).toFixed(1)}°${v >= 0 ? "N" : "S"}`;
+const fmtLon = (v) => `${(v > 180 ? 360 - v : v).toFixed(1)}°${v > 180 ? "W" : "E"}`;
+function tyCatOf(s) { return TY_CAT[s.category] ? s.category : "TD"; }
+function tyAge(s) {
+  if (!s.updated) return "";
+  const h = (Date.now() - new Date(s.updated + "Z").getTime()) / 36e5;
+  return h < 1 ? "방금" : h < 48 ? `${Math.round(h)}시간 전` : `${Math.round(h / 24)}일 전`;
+}
+
+function renderTyphoon(pane) {
+  pane.innerHTML = "";
+  const T = S.typhoons || {};
+  const storms = T.storms || [];
+  const wrap = document.createElement("div"); wrap.className = "ty"; pane.appendChild(wrap);
+  const mapBox = document.createElement("div"); mapBox.className = "ty-map"; wrap.appendChild(mapBox);
+  const side = document.createElement("div"); side.className = "ty-side"; wrap.appendChild(side);
+  side.innerHTML = tySideHTML(T, storms);
+  drawTyMap(mapBox, storms, T);
+  if (!COAST) loadCoast().then(c => { if (c && tab === "typhoon" && mapBox.isConnected) drawTyMap(mapBox, storms, T); });
+}
+
+function drawTyMap(box, storms, T) {
+  box.innerHTML = "";
+  const W = Math.max(box.clientWidth || 0, 560);
+  const lonSpan = TY_VIEW.lon1 - TY_VIEW.lon0, latSpan = (TY_VIEW.lat1 - TY_VIEW.lat0) * TY_YSCALE;
+  const H = Math.round(W * latSpan / lonSpan);
+  const k = W / lonSpan;
+  const X = (lon) => (lon - TY_VIEW.lon0) * k, Y = (lat) => (TY_VIEW.lat1 - lat) * k * TY_YSCALE;
+  const kmPx = (km) => km / 111 * k;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H });
+  svg.appendChild(el("rect", { x: 0, y: 0, width: W, height: H, fill: "#d9e6f2" }));
+
+  // 경위선
+  const gr = el("g", { stroke: "#ffffff", "stroke-width": 1, "stroke-opacity": .7 });
+  for (let lon = 100; lon <= 160; lon += 10) gr.appendChild(el("line", { x1: X(lon), x2: X(lon), y1: 0, y2: H }));
+  for (let lat = 10; lat <= 50; lat += 10) gr.appendChild(el("line", { x1: 0, x2: W, y1: Y(lat), y2: Y(lat) }));
+  svg.appendChild(gr);
+  // 육지
+  if (COAST) {
+    const g = el("g", { fill: "#eef0f3", stroke: "#ffffff", "stroke-width": 1, "stroke-linejoin": "round" });
+    for (const c of COAST.countries) {
+      let d = "";
+      for (const ring of c.r) d += ring.map((p, i) => `${i ? "L" : "M"}${X(p[0]).toFixed(1)} ${Y(p[1]).toFixed(1)}`).join("") + "Z";
+      g.appendChild(el("path", { d }));
+    }
+    svg.appendChild(g);
+  } else {
+    svg.appendChild(el("text", { x: W / 2, y: H / 2, "text-anchor": "middle", "font-size": 13, fill: C.muted }, "해안선 불러오는 중..."));
+  }
+  for (let lon = 100; lon <= 160; lon += 10) svg.appendChild(el("text", { x: X(lon) + 3, y: H - 6, "font-size": 10, fill: "#7d8aa0" }, `${lon}°E`));
+  for (let lat = 10; lat <= 50; lat += 10) svg.appendChild(el("text", { x: 4, y: Y(lat) - 3, "font-size": 10, fill: "#7d8aa0" }, `${lat}°N`));
+  // 지명
+  for (const [name, lon, lat] of TY_LABELS) {
+    const sea = TY_SEA.has(name);
+    svg.appendChild(el("text", { x: X(lon), y: Y(lat), "text-anchor": "middle", "font-size": sea ? 10.5 : 12, "font-weight": sea ? 400 : 600,
+      fill: sea ? "#7a93b3" : "#6b7280", "font-style": sea ? "italic" : "normal", "letter-spacing": sea ? ".08em" : "0" }, name));
+  }
+  // 우리 항만
+  for (const [name, lon, lat, side] of TY_PORTS) {
+    svg.appendChild(el("circle", { cx: X(lon), cy: Y(lat), r: 3.2, fill: C.primary, stroke: "#fff", "stroke-width": 1.2 }));
+    svg.appendChild(el("text", { x: X(lon) + 5 * side, y: Y(lat) + 3.5, "text-anchor": side > 0 ? "start" : "end", "font-size": 10, "font-weight": 700, fill: C.primary }, name));
+  }
+
+  // 태풍
+  const outside = (p) => p.lon < TY_VIEW.lon0 - 5 || p.lon > TY_VIEW.lon1 + 5 || p.lat < TY_VIEW.lat0 - 5 || p.lat > TY_VIEW.lat1 + 5;
+  for (const s of storms) {
+    const dim = s.status !== "active";
+    const g = el("g", { opacity: dim ? .6 : 1 });
+    const track = (s.track || []).filter(p => p.lat != null && !outside(p));
+    // 과거 경로: 구간마다 등급 색
+    for (let i = 1; i < track.length; i++) {
+      const a = track[i - 1], b = track[i];
+      g.appendChild(el("line", { x1: X(a.lon), y1: Y(a.lat), x2: X(b.lon), y2: Y(b.lat), stroke: TY_CAT[b.cat || "TD"][1], "stroke-width": 2.4, "stroke-linecap": "round" }));
+    }
+    for (const p of track) {
+      const hh = +(p.t || "").slice(11, 13);
+      if (hh % 6) continue;                                   // 6시간 간격 점만
+      const c = el("circle", { cx: X(p.lon), cy: Y(p.lat), r: 3, fill: TY_CAT[p.cat || "TD"][1], stroke: "#fff", "stroke-width": 1 });
+      bindTip(c, `<b>${esc(s.name_ko || s.name)}</b> · ${TY_CAT[p.cat || "TD"][0]}\n${tyTime(p.t)}\n${fmtLat(p.lat)} ${fmtLon(p.lon)}${p.wind ? `\n최대풍속 ${p.wind}kt (${ktToMs(p.wind)}m/s)` : ""}${p.pres ? `\n중심기압 ${p.pres}hPa` : ""}`);
+      g.appendChild(c);
+    }
+    // 예보 (JTWC)
+    const fc = (s.forecast || []).filter(p => p.lat != null);
+    if (s.lat != null && fc.length) {
+      let prev = { lat: s.lat, lon: s.lon };
+      for (const p of fc) {
+        const r = kmPx(TY_FC_RADIUS_KM[p.tau] || p.tau * 4.5);
+        g.appendChild(el("circle", { cx: X(p.lon), cy: Y(p.lat), r, fill: "#ef6a1f", "fill-opacity": .07, stroke: "#ef6a1f", "stroke-opacity": .5, "stroke-width": 1, "stroke-dasharray": "3 3" }));
+        g.appendChild(el("line", { x1: X(prev.lon), y1: Y(prev.lat), x2: X(p.lon), y2: Y(p.lat), stroke: "#334155", "stroke-width": 1.6, "stroke-dasharray": "5 4" }));
+        prev = p;
+      }
+      for (const p of fc) {
+        const c = el("circle", { cx: X(p.lon), cy: Y(p.lat), r: 4, fill: "#fff", stroke: TY_CAT[p.cat || "TD"][1], "stroke-width": 2.2 });
+        bindTip(c, `<b>${esc(s.name_ko || s.name)}</b> · ${p.tau}시간 예보 (JTWC)\n${tyTime(p.t)}\n${fmtLat(p.lat)} ${fmtLon(p.lon)}${p.wind ? `\n최대풍속 ${p.wind}kt (1분 평균, ${ktToMs(p.wind)}m/s)` : ""}`);
+        g.appendChild(c);
+        g.appendChild(el("text", { x: X(p.lon) + 6, y: Y(p.lat) - 5, "font-size": 10, "font-weight": 700, fill: "#334155" }, `${p.tau}h`));
+      }
+    }
+    // 현재 위치
+    if (s.lat != null && !outside(s)) {
+      const col = TY_CAT[tyCatOf(s)][1];
+      const cx = X(s.lon), cy = Y(s.lat);
+      if (!dim) g.appendChild(el("circle", { cx, cy, r: 16, fill: col, "fill-opacity": .18 }));
+      g.appendChild(el("circle", { cx, cy, r: dim ? 6 : 8, fill: col, stroke: "#fff", "stroke-width": 2 }));
+      g.appendChild(el("circle", { cx, cy, r: dim ? 1.6 : 2.4, fill: "#fff" }));
+      const label = (s.name_ko ? `${s.name_ko} (${s.name})` : s.name) + (dim ? " · 소멸" : "");
+      const tw = textW(label, 11.5, 700) + 12;
+      const lx = cx + 11 + tw > W - 6 ? cx - 11 - tw : cx + 11;      // 오른쪽이 잘리면 왼쪽에
+      g.appendChild(el("rect", { x: lx, y: cy - 20, width: tw, height: 18, rx: 6, fill: "#fff", "fill-opacity": .92, stroke: col, "stroke-width": 1 }));
+      g.appendChild(el("text", { x: lx + 6, y: cy - 7, "font-size": 11.5, "font-weight": 700, fill: "#1c1f26" }, label));
+      const hit = el("circle", { cx, cy, r: 14, fill: "transparent" });
+      bindTip(hit, tyTipHTML(s));
+      g.appendChild(hit);
+    }
+    svg.appendChild(g);
+  }
+  box.appendChild(svg);
+
+  // 범례 / 시각
+  const lg = document.createElement("div"); lg.className = "legend";
+  lg.innerHTML = Object.entries(TY_CAT).map(([k, [n, c]]) => `<span><i style="background:${c}"></i>${n}</span>`).join("")
+    + `<span><i class="fc"></i>예보 경로(JTWC)</span>`;
+  box.appendChild(lg);
+  const st = document.createElement("div"); st.className = "stamp";
+  st.textContent = T.fetched_at ? `자료 ${T.fetched_at}` : "자료 없음";
+  box.appendChild(st);
+}
+
+function tyTipHTML(s) {
+  const cat = TY_CAT[tyCatOf(s)];
+  let h = `<b>${esc(s.name_ko || s.name)}</b> ${s.name_ko ? "(" + esc(s.name) + ")" : ""} · ${cat[0]}\n${tyTime(s.updated)} 기준`;
+  if (s.lat != null) h += `\n${fmtLat(s.lat)} ${fmtLon(s.lon)}`;
+  if (s.wind_kt) h += `\n최대풍속 ${s.wind_kt}kt (${ktToMs(s.wind_kt)}m/s)`;
+  if (s.pres_hpa) h += `\n중심기압 ${s.pres_hpa}hPa`;
+  if (s.move_dir != null) h += `\n이동 ${dirKo(s.move_dir)} ${s.move_kt != null ? s.move_kt + "kt" : ""}`;
+  return h;
+}
+
+function tySideHTML(T, storms) {
+  const active = storms.filter(s => s.status === "active"), recent = storms.filter(s => s.status !== "active");
+  let h = `<h2>태풍 모니터링 ${active.length ? `<span class="pill" style="background:${TY_CAT.TY[1]}">활동 ${active.length}</span>` : `<span class="pill ghost">활동 없음</span>`}</h2>
+    <div class="m">북서태평양 · 한국 · 일본 · 중국 · 러시아 극동 · 베트남 해역 · ${T.fetched_at ? "수집 " + T.fetched_at : "자료 없음"}</div>`;
+  if (!active.length) {
+    h += `<div class="ty-quiet"><div class="big">현재 활동 중인 태풍이 없습니다</div><div class="m">열대저압부·태풍이 발생하면 10분 이내에 지도와 목록에 자동 표시됩니다</div></div>`;
+  }
+  const card = (s, dim) => {
+    const cat = TY_CAT[tyCatOf(s)];
+    const no = s.jma_number ? String(s.jma_number).slice(-2).replace(/^0/, "") : "";
+    return `<div class="ty-storm${dim ? " dim" : ""}">
+      <div class="nm"><b>${esc(s.name_ko || s.name)}</b>${s.name_ko ? `<span class="en">${esc(s.name)}</span>` : ""}
+        <span class="pill" style="background:${cat[1]}">${cat[0]}</span>
+        ${dim ? `<span class="pill ghost">소멸 · ${tyAge(s)}</span>` : `<span class="pill ghost">${tyAge(s)} 갱신</span>`}
+        ${no ? `<span class="pill ghost">제${no}호</span>` : ""}</div>
+      <div class="kv">
+        <span>위치</span><span>${s.lat != null ? `${fmtLat(s.lat)} ${fmtLon(s.lon)}` : "-"}</span>
+        <span>최대풍속</span><span>${s.wind_kt ? `${s.wind_kt}kt · ${ktToMs(s.wind_kt)}m/s` : "-"}${s.jtwc_wind_kt ? ` <span class="m">(JTWC 1분 ${s.jtwc_wind_kt}kt)</span>` : ""}</span>
+        <span>중심기압</span><span>${s.pres_hpa ? s.pres_hpa + " hPa" : "-"}</span>
+        <span>이동</span><span>${s.move_dir != null ? `${dirKo(s.move_dir)} ${s.move_kt != null ? s.move_kt + "kt (" + ktToMs(s.move_kt) + "m/s)" : ""}` : "-"}</span>
+        <span>기준시각</span><span>${tyTime(s.updated)}</span>
+        <span>예보</span><span>${(s.forecast || []).length ? `${s.forecast[s.forecast.length - 1].tau}시간까지 (JTWC 경보 #${s.jtwc_warning_no || "-"})` : "없음"}</span>
+        <span>자료</span><span>${(s.sources || []).join(" · ") || "-"}</span>
+      </div>
+      ${Object.keys(s.links || {}).length ? `<div class="links">${Object.entries(s.links).map(([n, u]) => `<a class="lnk" href="${esc(u)}" target="_blank" rel="noopener">${esc(n)} ↗</a>`).join("")}</div>` : ""}
+    </div>`;
+  };
+  h += active.map(s => card(s, false)).join("");
+  if (recent.length) h += `<div class="m" style="margin-top:4px">최근 소멸 (10일 이내)</div>` + recent.map(s => card(s, true)).join("");
+  const links = T.links || {};
+  h += `<div class="ty-src"><div class="lb">참고 사이트</div><div class="row">${Object.entries(links).map(([n, u]) => `<a class="lnk" href="${esc(u)}" target="_blank" rel="noopener">${esc(n)} ↗</a>`).join("")}</div>
+    <div class="m" style="margin-top:8px">위치·강도: IBTrACS(NOAA, JMA·JTWC 분석 통합) · 예보: JTWC 경보문 · 발생 감시: JMA. 공식 예보·특보는 기상청을 확인하세요. 시각은 보는 PC 기준.</div></div>`;
+  if (T.errors && T.errors.length) h += `<div class="ty-err">${esc(T.errors.join("\n"))}</div>`;
+  return h;
+}
+
 // ===================== 렌더 진입 =====================
 function renderPane() {
   for (const p of document.querySelectorAll(".pane")) p.classList.remove("on");
-  const paneKey = tab === "work" ? "work" : tab === "empty" ? "empty" : "gantt";
+  const paneKey = tab === "work" ? "work" : tab === "empty" ? "empty" : tab === "typhoon" ? "typhoon" : "gantt";
   const pane = $(paneKey + "Pane"); pane.classList.add("on");
   hideTip();
   if (paneKey === "gantt") renderGantt(pane, tab);
   else if (paneKey === "work") renderWork(pane);
+  else if (paneKey === "typhoon") renderTyphoon(pane);
   else renderEmpty(pane);
 }
 function renderAll() {
@@ -678,7 +916,7 @@ new ResizeObserver(() => {
   if (Math.abs(h - lastCardH) < 2) return;
   lastCardH = h; clearTimeout(resizeT); resizeT = setTimeout(renderPane, 150);
 }).observe($("card"));
-setInterval(() => { renderNextChip(); if (tab !== "work" && tab !== "empty") renderPane(); }, 60000);   // 현재 시각선 1분마다
+setInterval(() => { renderNextChip(); if (tab !== "work" && tab !== "empty" && tab !== "typhoon") renderPane(); }, 60000);   // 현재 시각선 1분마다
 setInterval(loadData, 180000);                                                                           // SSE 가 끊겨도 3분마다 보정
 document.addEventListener("visibilitychange", () => { if (!document.hidden) loadData(); });
 

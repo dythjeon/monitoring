@@ -24,7 +24,7 @@ OUT = os.path.join(HERE, "site")
 
 
 def main():
-    rows, work, empty, errors, stats = collect()
+    rows, work, empty, errors, stats, typhoons = collect()
 
     now = datetime.now()
     payload = {
@@ -32,7 +32,7 @@ def main():
         "updated_at": now.strftime("%Y-%m-%d %H:%M:%S"),
         "fetching": False,
         "data": rows, "work": work, "empty": empty,
-        "errors": errors, "stats": stats,
+        "errors": errors, "stats": stats, "typhoons": typhoons,
         "refresh_sec": REFRESH_SEC,
         "server_now": now.strftime("%Y-%m-%dT%H:%M:%S"),
         "sources": [name for name, _fn in SOURCES],
@@ -43,6 +43,7 @@ def main():
     with open(os.path.join(OUT, "data.json"), "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False)
     shutil.copyfile(os.path.join(HERE, "index.html"), os.path.join(OUT, "index.html"))
+    shutil.copyfile(os.path.join(HERE, "coast.json"), os.path.join(OUT, "coast.json"))
     open(os.path.join(OUT, ".nojekyll"), "w").close()
     # claude.ai 아티팩트용: 게시 시 문서 뼈대(doctype/html/head/body)를 호스트가 씌우므로 벗겨낸 본문만 둔다.
     with open(os.path.join(HERE, "index.html"), encoding="utf-8") as f:
