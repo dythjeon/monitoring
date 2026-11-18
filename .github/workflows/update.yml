@@ -1,0 +1,46 @@
+# 10분마다 6개 터미널 선석현황을 수집해서 GitHub Pages 에 올린다.
+# 주소: https://<GitHub아이디>.github.io/<저장소이름>/
+name: 선석현황 수집·게시
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"        # UTC 기준 10분마다 (GitHub 사정으로 몇 분 늦어질 수 있음)
+  workflow_dispatch:              # Actions 탭에서 수동 실행
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Seoul              # 수집 기준일·갱신시각을 한국시간으로
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r cloud/requirements.txt
+      - name: 수집 → site/
+        run: python build_static.py
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

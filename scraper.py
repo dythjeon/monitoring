@@ -246,7 +246,13 @@ def fetch_hjit(period_days=14, base_date=None):
     session = requests.Session()
     session.headers.update(HEADERS)
 
-    session.get(get_url, timeout=15)  # JSESSIONID 쿠키 확보
+    # JSESSIONID 쿠키 확보. 이 서버는 뒤쪽 WAS가 죽어 있으면 WebLogic 브리지가
+    # 10초를 기다린 뒤 503을 돌려준다. 예전엔 여기서 상태를 안 보고 POST까지
+    # 시도해 같은 10초를 한 번 더 기다렸다(총 24초). 503이면 바로 실패 처리한다.
+    first_resp = session.get(get_url, timeout=15)
+    if first_resp.status_code >= 500:
+        raise RuntimeError(
+            f"터미널 서버 장애(HTTP {first_resp.status_code}) - 한진인천 선석조회 시스템이 응답하지 않습니다")
 
     body = {
         "cmd": "BerthScheduleList",
@@ -418,26 +424,33 @@ def fetch_gwct_empty_status(carrier_code="DYS"):
     resp.encoding = resp.apparent_encoding or "utf-8"
 
     soup = BeautifulSoup(resp.text, "html.parser")
+    # 행 구분 -> counts 키 접두어. RF(냉동)는 국내 터미널 중 이 페이지만 타입별로
+    # 준다(BPTC의 "FL/PL/FC/FR"은 플랫랙, E1CT/HJIT는 GP/HQ만). 4H 는 40'HC.
+    row_keys = {"GP": ("GP20", "GP40", "HQ40"),
+                "RF": ("RF20", "RF40", "RH40"),
+                "OT": ("OT20", "OT40", "OH40")}
+    counts = {}
     for tr in soup.find_all("tr"):
         tds = tr.find_all("td")
-        if not tds or tds[0].get_text(strip=True) != "GP":
+        kind = tds[0].get_text(strip=True) if tds else ""
+        if kind not in row_keys:
             continue
         cells = [td.get_text(strip=True) for td in tds]
         if len(cells) < 27:
             continue
         depot = [int(c) if c.isdigit() else 0 for c in cells[19:25]]  # 20G-S,D 40G-S,D 40H-S,D
-        counts = {
-            "GP20": depot[0] + depot[1],
-            "GP40": depot[2] + depot[3],
-            "HQ40": depot[4] + depot[5],
-        }
-        return [{
-            "carrier": carrier_code.upper(),
-            "terminal": "광양서부",
-            "counts": counts,
-            "total": sum(counts.values()),
-        }]
-    return []
+        k20, k40, k4h = row_keys[kind]
+        counts[k20] = depot[0] + depot[1]
+        counts[k40] = depot[2] + depot[3]
+        counts[k4h] = depot[4] + depot[5]
+    if "GP20" not in counts:
+        return []
+    return [{
+        "carrier": carrier_code.upper(),
+        "terminal": "광양서부",
+        "counts": counts,
+        "total": sum(counts.values()),
+    }]
 
 
 def fetch_snct(line_code="KHP"):

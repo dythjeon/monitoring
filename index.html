@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>실시간 선석 모니터링</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+:root {
+  --bg: #f4f5f8; --card: #ffffff; --border: #edeef2; --text: #0b0f19; --muted: #8a8f98;
+  --primary: #2f6fed; --primary-dark: #1d4fc4; --primary-soft: #eaf1fe;
+  --track: #e4e8f0; --row-alt: #eff1f6; --grid-major: #ccd2dc; --grid-minor: #edf0f5;
+  --now: #ef4444; --sat: #2f6fed; --sun: #e8474c; --hover-row: #eef4ff; --table-line: #dfe3ea;
+  --busan: #2f6fed; --incheon: #f5a524; --gwangyang: #12b886; --japan: #e64980; --china: #7048e8;
+  --shadow: 0 1px 2px rgba(11,15,25,.04), 0 8px 24px -12px rgba(195,200,212,.9);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: Pretendard, -apple-system, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  font-size: 14px; line-height: 1.4; display: flex; flex-direction: column; min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+.accent { height: 3px; background: var(--primary); }
+
+/* ---- 헤더 ---- */
+header { background: var(--card); border-bottom: 1px solid var(--border); }
+.hd { max-width: 1480px; margin: 0 auto; padding: 18px 28px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.hd h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
+.hd .sub { margin-top: 5px; color: var(--muted); font-size: 12.5px; }
+.hd .right { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.status { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); position: relative; cursor: default; }
+.status.err { color: var(--now); }
+.live { width: 8px; height: 8px; border-radius: 50%; background: #c9ced8; flex: none; transition: background .3s; }
+.live.on { background: #12b886; box-shadow: 0 0 0 3px rgba(18,184,134,.18); }
+.spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--primary-soft); border-top-color: var(--primary); animation: spin .8s linear infinite; display: none; flex: none; }
+.spin.on { display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.popover { position: absolute; top: 24px; right: 0; background: #1c1f26; color: #f1f3f7; padding: 10px 13px; border-radius: 10px; font-size: 12px; white-space: pre; line-height: 1.6; box-shadow: 0 8px 24px rgba(0,0,0,.25); z-index: 30; display: none; }
+.status:hover .popover { display: block; }
+.btn { background: var(--primary); color: #fff; border: 0; border-radius: 10px; padding: 9px 20px; font: inherit; font-weight: 700; font-size: 13px; cursor: pointer; transition: background .15s; }
+.btn:hover { background: var(--primary-dark); }
+.btn:disabled { opacity: .6; cursor: default; }
+.chip { font-size: 11.5px; color: var(--muted); background: var(--bg); border-radius: 999px; padding: 3px 10px; }
+
+/* ---- 통계 카드 ---- */
+main { flex: 1; display: flex; flex-direction: column; max-width: 1480px; width: 100%; margin: 0 auto; padding: 24px 28px 18px; gap: 18px; }
+.stats { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+.stats .sep { width: 1px; background: var(--border); margin: 10px 8px; align-self: stretch; }
+.stat { flex: 1 1 120px; background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 14px 18px; box-shadow: var(--shadow); min-width: 120px; }
+.stat .lb { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.stat .dot { width: 8px; height: 8px; border-radius: 50%; }
+.stat .v { font-size: 26px; font-weight: 700; margin-top: 4px; letter-spacing: -.02em; line-height: 1.1; }
+.stat.em { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 10px 24px -10px rgba(47,111,237,.6); }
+.stat.em .lb { color: rgba(255,255,255,.8); }
+
+/* ---- 탭 ---- */
+.tabs { display: inline-flex; background: #e9ebf1; border-radius: 999px; padding: 4px; gap: 2px; align-self: flex-start; flex-wrap: wrap; }
+.tab { border: 0; background: transparent; padding: 7px 16px; border-radius: 999px; font: inherit; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; transition: all .15s; white-space: nowrap; }
+.tab:hover { color: var(--text); }
+.tab.on { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(11,15,25,.12); }
+
+/* ---- 콘텐츠 카드 ---- */
+.card { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow); padding: 16px; min-height: 420px; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+.pane { flex: 1; display: none; min-height: 0; overflow: auto; }
+.pane.on { display: flex; flex-direction: column; }
+.pane svg { display: block; font-family: inherit; }
+.empty-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; pointer-events: none; }
+
+/* 툴팁 */
+.tip { position: fixed; z-index: 50; background: #1c1f26; color: #f1f3f7; padding: 9px 12px; border-radius: 10px; font-size: 12px; line-height: 1.55; white-space: pre; pointer-events: none; display: none; box-shadow: 0 8px 24px rgba(0,0,0,.25); max-width: 360px; }
+.tip b { font-size: 13px; }
+
+/* ---- 본선작업현황 ---- */
+.work { padding: 6px 8px; }
+.work .axis { display: grid; grid-template-columns: 170px 1fr 56px; margin-bottom: 8px; }
+.work .axis .ticks { position: relative; height: 18px; color: var(--muted); font-size: 11px; }
+.work .axis .ticks span { position: absolute; transform: translateX(-50%); }
+.work .row { display: grid; grid-template-columns: 170px 1fr 56px; align-items: center; height: 54px; border-radius: 10px; padding: 0 4px; }
+.work .row:nth-child(even) { background: var(--row-alt); }
+.work .row .lb { font-weight: 700; font-size: 13px; padding-left: 10px; }
+.work .track { position: relative; height: 30px; background: var(--track); border-radius: 6px; overflow: hidden; background-image: linear-gradient(90deg, var(--grid-major) 1px, transparent 1px); background-size: 25% 100%; background-position: -1px 0; }
+.work .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; border: 1.2px solid #fff; }
+.work .txt { position: absolute; top: 50%; transform: translateY(-50%); white-space: nowrap; line-height: 1.15; }
+.work .txt .n { font-weight: 700; font-size: 12.5px; }
+.work .txt .vy { font-size: 11px; opacity: .8; }
+.work .pct { text-align: right; font-weight: 700; font-size: 14px; padding-right: 6px; }
+
+/* ---- 국내공컨현황 ---- */
+.emp { padding: 6px 10px 10px; }
+.emp .head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; padding: 0 12px; }
+.emp .head h2 { margin: 0; font-size: 16px; }
+.emp .head .m { color: var(--muted); font-size: 12px; }
+.emp .head .tot { margin-left: auto; display: flex; align-items: baseline; gap: 8px; color: var(--muted); font-size: 12px; }
+.emp .head .tot b { color: var(--primary); font-size: 22px; }
+table.et { width: 100%; border-collapse: collapse; }
+table.et th, table.et td { padding: 10px 12px; text-align: center; white-space: nowrap; }
+table.et th { color: var(--muted); font-weight: 600; font-size: 12px; }
+table.et th.g { text-align: center; padding: 8px 0 6px; background: #f3f5f9; border: 1px solid var(--table-line); border-bottom: 0; border-radius: 12px 12px 0 0; }
+table.et th.g span { display: inline-block; background: var(--primary-soft); color: var(--primary-dark); border-radius: 8px; padding: 3px 14px; font-size: 11.5px; font-weight: 700; }
+/* DC/OT/FR 그룹은 셀마다 배경을 깔고 양끝 셀에 세로 테두리를 줘서 하나의 블록으로 보이게 한다 */
+table.et .gc { background: #f6f7fa; }
+table.et .gl { border-left: 1px solid var(--table-line); }
+table.et .gr { border-right: 1px solid var(--table-line); }
+table.et tbody tr:hover .gc { background: #e6eefc; }
+table.et tfoot td.gc { background: #eef0f5; }
+table.et tfoot td.gl { border-bottom-left-radius: 12px; border-bottom: 1px solid var(--table-line); }
+table.et tfoot td.gr { border-bottom-right-radius: 12px; border-bottom: 1px solid var(--table-line); }
+table.et tfoot td.gc { border-bottom: 1px solid var(--table-line); }
+table.et thead tr:last-child th.gc { border-bottom: 1px solid var(--table-line); }
+table.et td.lb, table.et th.lb { text-align: left; }
+.emp .note { color: var(--muted); font-size: 11.5px; padding: 10px 12px 0; }
+table.et th.gap, table.et td.gap { width: 22px; padding: 0; background: transparent !important; }
+table.et thead tr:last-child th { border-bottom: 1px solid var(--table-line); }
+table.et tbody tr { border-bottom: 1px solid var(--border); }
+table.et tbody tr:hover { background: var(--hover-row); }
+table.et td { font-size: 13.5px; }
+table.et td.lb { font-weight: 700; font-size: 13.5px; }
+table.et td.lb .rg { color: var(--muted); font-weight: 400; font-size: 10.5px; margin-left: 8px; }
+table.et td.lb .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 9px; vertical-align: 1px; }
+table.et td.zero { color: #c9ced8; }
+table.et td.tot { font-weight: 700; font-size: 15px; }
+table.et tfoot td { font-weight: 700; border-top: 1px solid var(--table-line); padding-top: 12px; padding-bottom: 12px; }
+table.et tfoot td.tot { color: var(--primary); font-size: 16px; }
+.share { padding: 22px 12px 0; }
+.share .lb { font-size: 12px; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
+.share .bar { display: flex; height: 14px; gap: 3px; border-radius: 4px; overflow: hidden; }
+.share .bar i { display: block; border-radius: 4px; min-width: 0; }
+.share .lg { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 10px; font-size: 12px; }
+.share .lg span.c { color: var(--muted); margin-left: 7px; }
+.share .lg i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+
+footer { text-align: center; color: #b4b8c2; font-size: 11px; padding: 0 0 14px; }
+.toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: #1c1f26; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; }
+.toast.on { opacity: 1; }
+
+@media (max-width: 760px) {
+  .hd { padding: 14px 16px; } .hd h1 { font-size: 18px; } .hd .right { margin-left: 0; width: 100%; flex-direction: row; justify-content: space-between; align-items: center; }
+  main { padding: 14px 16px; gap: 12px; }
+  .stats .sep { display: none; } .stat { padding: 10px 14px; } .stat .v { font-size: 22px; }
+  .card { padding: 10px; min-height: 360px; }
+  .work .axis, .work .row { grid-template-columns: 110px 1fr 48px; }
+}
+</style>
+</head>
+<body>
+<div class="accent"></div>
+<header>
+  <div class="hd">
+    <div>
+      <h1>Real-time Berth/Empty stock Monitoring</h1>
+      <div class="sub" id="subtitle">부산항 · 인천항 · 광양항 실시간 선석 배정 현황 · 선사코드 DYS · 7일 구간</div>
+    </div>
+    <div class="right">
+      <div class="status" id="status">
+        <span class="live" id="live" title="서버 실시간 연결"></span>
+        <span class="spin" id="spin"></span>
+        <span id="statusText">불러오는 중...</span>
+        <div class="popover" id="statusDetail"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="chip" id="nextChip"></span>
+        <button class="btn" id="refreshBtn">새로고침</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="stats" id="stats"></div>
+  <div class="tabs" id="tabs"></div>
+  <div class="card" id="card">
+    <div class="pane" data-pane="gantt" id="ganttPane"></div>
+    <div class="pane" data-pane="work" id="workPane"></div>
+    <div class="pane" data-pane="empty" id="emptyPane"></div>
+  </div>
+</main>
+<footer>BerthMonitor Web · 터미널 사이트에서 수집한 자료이며 실제 작업 일정과 다를 수 있습니다</footer>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ===================== 상수 (gui.py 와 동일) =====================
+const WINDOW_DAYS = 7;
+const MIN_ROWS = 5;
+const TERMINAL_ORDER = ["신선대", "감만", "허치슨", "광양서부", "E1CT", "한진신항", "선광신항"];
+const TERMINAL_REGION = { "신선대": "부산", "감만": "부산", "허치슨": "부산", "광양서부": "광양",
+                          "E1CT": "인천", "한진신항": "인천", "선광신항": "인천" };
+const REGION_COLOR = { "부산": "#2f6fed", "인천": "#f5a524", "광양": "#12b886" };
+const COUNTRY_KEYS = ["일본", "중국"];
+const COUNTRY_COLOR = { "일본": "#e64980", "중국": "#7048e8", "동남아": "#00b8d4", "러시아": "#12b886" };
+const TAB_KEYS = ["전체", "부산", "인천", "광양"];
+const TABS = [["전체", "전체"], ["부산", "부산항"], ["인천", "인천항"], ["광양", "광양항"],
+              ["work", "본선작업현황"], ["empty", "국내공컨현황"]];
+const EMPTY_GROUPS = [["DC", [["GP20", "20'"], ["GP40", "40'"], ["HQ40", "4H"]]],
+                      ["OT", [["OT20", "20'"], ["OT40", "40'"]]],
+                      ["FR", [["FL20", "20'"], ["FL40", "40'"]]],
+                      ["RF", [["RF20", "20'"], ["RH40", "4H"]]]];   // RF 는 광양서부만 제공. 냉동은 40' 일반이 없고 40'HC 뿐
+const EMPTY_TERMINALS = ["신선대", "감만", "광양서부", "E1CT", "한진신항"];
+const WD = ["일", "월", "화", "수", "목", "금", "토"];
+const C = {
+  text: "#0b0f19", muted: "#8a8f98", card: "#ffffff", primary: "#2f6fed", rowAlt: "#eff1f6",
+  gridMajor: "#ccd2dc", gridMinor: "#edf0f5", now: "#ef4444", sat: "#2f6fed", sun: "#e8474c",
+  tableLine: "#dfe3ea", border: "#edeef2", track: "#e4e8f0",
+};
+
+// ===================== 상태 =====================
+let S = { data: [], work: [], empty: [], errors: [], stats: [], updated_at: null, generation: -1,
+          fetching: false, refresh_sec: 600 };
+let tab = new URLSearchParams(location.search).get("tab") || localStorage.getItem("bm.tab") || "전체";   // ?tab=work 처럼 링크로 탭 지정 가능
+if (!TABS.some(t => t[0] === tab)) tab = "전체";
+
+// ===================== 유틸 =====================
+const $ = (id) => document.getElementById(id);
+function parseDT(s) {               // "YYYY-MM-DDTHH:MM:SS" 를 로컬 시각으로 (타임존 해석 없이)
+  if (!s) return null;
+  const m = /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)(?::(\d\d))?/.exec(s);
+  return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) : null;
+}
+const pad2 = (n) => String(n).padStart(2, "0");
+const fmtDT = (d) => `${d.getMonth() + 1}/${d.getDate()}(${WD[d.getDay()]}) ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+const fmtDay = (d) => `${d.getMonth() + 1}/${d.getDate()}(${WD[d.getDay()]})`;
+const fmtN = (n) => n.toLocaleString("ko-KR");
+function ganttWindow() {
+  const s = new Date(); s.setHours(0, 0, 0, 0);
+  return [s, new Date(s.getTime() + WINDOW_DAYS * 864e5)];
+}
+const inWindow = (d, ws, we) => d.eta && d.etd && d.etd >= ws && d.eta <= we;
+function blend(a, b, t) {
+  const pa = a.match(/\w\w/g).map(h => parseInt(h, 16)), pb = b.match(/\w\w/g).map(h => parseInt(h, 16));
+  return "#" + pa.map((v, i) => Math.round(v + (pb[i] - v) * t).toString(16).padStart(2, "0")).join("");
+}
+const _mc = document.createElement("canvas").getContext("2d");
+function textW(s, px, weight) { _mc.font = `${weight || 400} ${px}px Pretendard, "Segoe UI", "Malgun Gothic", sans-serif`; return _mc.measureText(s).width; }
+function fitText(s, px, weight, maxW) {       // 넘치면 말줄임, 2글자도 못 넣으면 빈 문자열
+  if (textW(s, px, weight) <= maxW) return s;
+  let lo = 0, hi = s.length;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (textW(s.slice(0, mid) + "…", px, weight) <= maxW) lo = mid; else hi = mid - 1; }
+  return lo >= 2 ? s.slice(0, lo) + "…" : "";
+}
+const svgNS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, text) {
+  const e = document.createElementNS(svgNS, tag);
+  for (const k in attrs) if (attrs[k] != null) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  return e;
+}
+let toastT;
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), 2200); }
+
+// 툴팁
+const tip = $("tip");
+function showTip(html, ev) { tip.innerHTML = html; tip.style.display = "block"; moveTip(ev); }
+function moveTip(ev) {
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = ev.clientX + 14, y = ev.clientY + 16;
+  if (x + w > innerWidth - 8) x = ev.clientX - w - 14;
+  if (y + h > innerHeight - 8) y = ev.clientY - h - 12;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+function hideTip() { tip.style.display = "none"; }
+function bindTip(node, html) {
+  node.addEventListener("mouseenter", (e) => showTip(html, e));
+  node.addEventListener("mousemove", moveTip);
+  node.addEventListener("mouseleave", hideTip);
+}
+const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+// ===================== 헤더/통계/탭 =====================
+function buildTabs() {
+  const box = $("tabs"); box.innerHTML = "";
+  for (const [key, label] of TABS) {
+    const b = document.createElement("button");
+    b.className = "tab" + (key === tab ? " on" : ""); b.textContent = label; b.dataset.key = key;
+    b.onclick = () => { tab = key; localStorage.setItem("bm.tab", key); buildTabs(); renderPane(); };
+    box.appendChild(b);
+  }
+}
+
+function renderStats(visible) {
+  const groups = [
+    [["__total__", "전체", C.primary, true]],
+    TAB_KEYS.slice(1).map(k => [k, k + "항", REGION_COLOR[k], false]),
+    COUNTRY_KEYS.map(k => [k, k, COUNTRY_COLOR[k], false]),
+  ];
+  const count = (key) => key === "__total__" ? visible.length
+    : TAB_KEYS.includes(key) ? visible.filter(d => d.region === key).length
+    : visible.filter(d => d.country === key).length;
+  const box = $("stats"); box.innerHTML = "";
+  groups.forEach((g, gi) => {
+    if (gi) { const s = document.createElement("div"); s.className = "sep"; box.appendChild(s); }
+    for (const [key, label, color, em] of g) {
+      const d = document.createElement("div");
+      d.className = "stat" + (em ? " em" : "");
+      d.innerHTML = `<div class="lb"><span class="dot" style="background:${em ? "#fff" : color}"></span>${label}</div><div class="v">${fmtN(count(key))}</div>`;
+      box.appendChild(d);
+    }
+  });
+}
+
+function sourceReport() {
+  const lines = [];
+  for (const [name, cnt] of S.stats || []) {
+    lines.push(cnt == null ? `${name}  ·  조회 실패` : cnt === 0 ? `${name}  ·  0건 (해당 선박 없음)` : `${name}  ·  ${cnt}건`);
+  }
+  if (S.errors && S.errors.length) { if (lines.length) lines.push(""); lines.push(...S.errors); }
+  return lines.join("\n");
+}
+
+function renderStatus() {
+  let msg = S.updated_at ? `마지막 갱신 ${S.updated_at}` : "불러오는 중...";
+  if (S.stats && S.stats.length) {
+    const ok = S.stats.filter(s => s[1] != null).length;
+    msg += `  ·  조회 ${ok}/${S.stats.length}`;
+  }
+  if (S.errors && S.errors.length) msg += `  ·  오류 ${S.errors.length}건`;
+  $("statusText").textContent = msg;
+  $("status").classList.toggle("err", !!(S.errors && S.errors.length));
+  const rep = sourceReport();
+  $("statusDetail").textContent = rep; $("statusDetail").style.display = rep ? "" : "none";
+  $("spin").classList.toggle("on", !!S.fetching);
+  $("refreshBtn").disabled = !!S.fetching;
+  $("subtitle").textContent = `부산항 · 인천항 · 광양항 실시간 선석 배정 현황 · 선사코드 DYS · ${WINDOW_DAYS}일 구간 · ${Math.round(S.refresh_sec / 60)}분마다 자동 갱신`;
+  renderNextChip();
+}
+function renderNextChip() {
+  const chip = $("nextChip");
+  if (S.fetching) { chip.textContent = "터미널 조회 중"; return; }
+  if (!S.updated_at) { chip.textContent = ""; return; }
+  const next = parseDT(S.updated_at.replace(" ", "T")).getTime() + S.refresh_sec * 1000;
+  const left = Math.max(0, Math.round((next - Date.now()) / 60000));
+  chip.textContent = left <= 0 ? "곧 자동 갱신" : `다음 갱신 ${left}분 후`;
+}
+
+// ===================== 간트 =====================
+function renderGantt(pane, key) {
+  pane.innerHTML = "";
+  const now = new Date();
+  const [ws, we] = ganttWindow();
+  const data = key === "전체" ? S.data : S.data.filter(d => d.region === key);
+  const usable = data.filter(d => inWindow(d, ws, we));
+
+  // ---- 행 구성: TERMINAL_ORDER 를 그대로 깔고, 접안 없는 터미널은 빈 행으로 자리만 지킨다
+  const present = {};
+  for (const d of usable) (present[d.terminal] ||= new Set()).add(d.berth);
+  const extra = [...new Set(usable.map(d => d.terminal))].filter(t => !TERMINAL_ORDER.includes(t)).sort();
+  const rows = [];
+  for (const term of [...TERMINAL_ORDER, ...extra]) {
+    const region = TERMINAL_REGION[term] || (usable.find(d => d.terminal === term) || {}).region || "";
+    if (key !== "전체" && region !== key) continue;
+    const berths = present[term] ? [...present[term]].sort((a, b) => String(a).localeCompare(String(b), "ko", { numeric: true })) : [];
+    if (berths.length) berths.forEach(b => rows.push({ region, term, berth: b }));
+    else rows.push({ region, term, berth: null });
+  }
+
+  // ---- 같은 선석에 겹치는 선박은 서브레인으로 세로 분할 (interval partitioning)
+  const laneOf = new Map(), laneCount = new Map(), rowTop = new Map();
+  let cursor = 0;
+  for (const r of rows) {
+    const k = r.term + "\u0000" + r.berth;
+    const items = usable.filter(d => d.terminal === r.term && d.berth === r.berth).sort((a, b) => a.eta - b.eta || a.etd - b.etd);
+    const laneEnd = [];
+    for (const d of items) {
+      let j = laneEnd.findIndex(end => d.eta >= end);
+      if (j < 0) { j = laneEnd.length; laneEnd.push(d.etd); } else laneEnd[j] = d.etd;
+      laneOf.set(d, j);
+    }
+    laneCount.set(k, Math.max(laneEnd.length, 1));
+    rowTop.set(k, cursor); cursor += laneCount.get(k);
+  }
+  const totalUnits = cursor;
+
+  // ---- 치수
+  const W = Math.max(pane.clientWidth, 860);
+  const H = Math.max(pane.clientHeight, 360);
+  const P = 12, G = 13, HOUR_ROW = 18, DATE_ROW = 34;
+  const termW = Math.max(0, ...rows.map(r => textW(r.term, 14, 700)));
+  const berthLabel = (b) => b == null ? "—" : `${b}선석`;
+  const berthW = Math.max(0, ...rows.map(r => textW(berthLabel(r.berth), 13.5, 400)));
+  const sep1 = P + termW + G / 2, sep2 = sep1 + G / 2 + berthW + G / 2;
+  const left = sep2 + G, right = W - 14;
+  // 구간 밖 다음 입항 안내 줄
+  const shown = new Set(usable.map(d => d.terminal));
+  const upcoming = {};
+  for (const d of data) {
+    if (shown.has(d.terminal) || !d.eta || d.eta <= we) continue;
+    if (!upcoming[d.terminal] || d.eta < upcoming[d.terminal].eta) upcoming[d.terminal] = d;
+  }
+  const picks = Object.values(upcoming).sort((a, b) => a.eta - b.eta);
+  const FOOT = picks.length ? 22 : 0;
+  const top = HOUR_ROW + 6, bottom = H - DATE_ROW - FOOT;
+  const units = Math.max(totalUnits, MIN_ROWS);
+  const unitH = Math.max(34, Math.min(80, (bottom - top) / units));
+  const slack = Math.max(MIN_ROWS - totalUnits, 0) / 2 * unitH;
+  const y0 = top + slack;                              // 첫 행 위쪽
+  const chartBottom = y0 + totalUnits * unitH;
+  const svgH = Math.max(H, chartBottom + slack + DATE_ROW + FOOT);
+  const spanMs = we - ws, chartW = right - left;
+  const xOf = (t) => left + (t - ws) / spanMs * chartW;
+  const dateBase = chartBottom + slack;
+
+  const svg = el("svg", { width: W, height: svgH, viewBox: `0 0 ${W} ${svgH}` });
+  svg.style.minWidth = W + "px";
+
+  // 줄무늬 (선석 단위)
+  rows.forEach((r, i) => {
+    if (i % 2 === 0) return;
+    const k = r.term + "\u0000" + r.berth;
+    svg.appendChild(el("rect", { x: left, y: y0 + rowTop.get(k) * unitH, width: chartW, height: laneCount.get(k) * unitH, fill: C.rowAlt }));
+  });
+  // 격자: 6/12/18시 보조선, 날짜 경계 주선
+  for (let day = 0; day < WINDOW_DAYS; day++) {
+    for (const h of [6, 12, 18]) {
+      const x = xOf(new Date(ws.getTime() + (day * 24 + h) * 36e5));
+      svg.appendChild(el("line", { x1: x, x2: x, y1: y0 - slack, y2: dateBase, stroke: C.gridMinor, "stroke-width": 1 }));
+    }
+  }
+  for (let day = 0; day <= WINDOW_DAYS; day++) {
+    const x = xOf(new Date(ws.getTime() + day * 864e5));
+    svg.appendChild(el("line", { x1: x, x2: x, y1: y0 - slack, y2: dateBase, stroke: C.gridMajor, "stroke-width": 1 }));
+  }
+  svg.appendChild(el("line", { x1: left, x2: right, y1: dateBase, y2: dateBase, stroke: C.border, "stroke-width": 1 }));
+
+  // 위쪽 시간 눈금 — 하루 폭이 좁으면 간격을 넓힌다
+  const perDay = chartW / WINDOW_DAYS;
+  const step = perDay >= 150 ? 6 : perDay >= 78 ? 12 : 24;
+  for (let day = 0; day < WINDOW_DAYS; day++)
+    for (let h = 0; h < 24; h += step)
+      svg.appendChild(el("text", { x: xOf(new Date(ws.getTime() + (day * 24 + h) * 36e5)), y: HOUR_ROW - 4, "text-anchor": "middle", "font-size": 10.5, fill: C.muted }, pad2(h)));
+  // 아래쪽 날짜 라벨 — 그 날 칸 한가운데(정오)
+  for (let day = 0; day < WINDOW_DAYS; day++) {
+    const d = new Date(ws.getTime() + day * 864e5);
+    const isToday = d.toDateString() === now.toDateString();
+    const col = d.getDay() === 6 ? C.sat : d.getDay() === 0 ? C.sun : C.text;
+    svg.appendChild(el("text", { x: xOf(new Date(d.getTime() + 12 * 36e5)), y: dateBase + 22, "text-anchor": "middle",
+      "font-size": isToday ? 14.5 : 13.5, "font-weight": isToday ? 700 : 500, fill: col }, fmtDay(d)));
+  }
+
+  // ---- 행 헤더: 터미널(병합) | 선석
+  const groups = [];
+  for (let i = 0; i < rows.length;) {
+    let j = i; while (j < rows.length && rows[j].term === rows[i].term) j++;
+    const k0 = rows[i].term + "\u0000" + rows[i].berth, k1 = rows[j - 1].term + "\u0000" + rows[j - 1].berth;
+    groups.push({ term: rows[i].term, region: rows[i].region, y1: y0 + rowTop.get(k0) * unitH,
+                  y2: y0 + (rowTop.get(k1) + laneCount.get(k1)) * unitH, empty: rows.slice(i, j).every(r => r.berth == null) });
+    i = j;
+  }
+  if (groups.length) {
+    const yTop = groups[0].y1, yBot = groups[groups.length - 1].y2;
+    for (const x of [sep1, sep2]) svg.appendChild(el("line", { x1: x, x2: x, y1: yTop, y2: yBot, stroke: C.tableLine }));
+    const edges = new Set(groups.flatMap(g => [g.y1, g.y2]));
+    for (const y of edges) svg.appendChild(el("line", { x1: 0, x2: right, y1: y, y2: y, stroke: C.tableLine }));
+    for (const g of groups)
+      svg.appendChild(el("text", { x: sep1 / 2, y: (g.y1 + g.y2) / 2, "text-anchor": "middle", "dominant-baseline": "central",
+        "font-size": 14, "font-weight": g.empty ? 400 : 700, fill: g.empty ? C.muted : (REGION_COLOR[g.region] || C.text) }, g.term));
+    for (const r of rows) {
+      const k = r.term + "\u0000" + r.berth;
+      svg.appendChild(el("text", { x: (sep1 + sep2) / 2, y: y0 + (rowTop.get(k) + laneCount.get(k) / 2) * unitH, "text-anchor": "middle",
+        "dominant-baseline": "central", "font-size": 13.5, fill: r.berth == null ? C.muted : C.text }, berthLabel(r.berth)));
+    }
+  }
+
+  // ---- 막대
+  const barH = unitH * 0.66;
+  const spanW = chartW;
+  const clip = el("clipPath", { id: "clip-" + key });
+  clip.appendChild(el("rect", { x: left, y: 0, width: chartW, height: svgH }));
+  const defs = el("defs"); defs.appendChild(clip); svg.appendChild(defs);
+  const barLayer = el("g", { "clip-path": `url(#clip-${key})` }); svg.appendChild(barLayer);
+
+  for (const d of usable) {
+    const k = d.terminal + "\u0000" + d.berth;
+    const yc = y0 + (rowTop.get(k) + laneOf.get(d) + 0.5) * unitH;
+    const x1 = Math.max(xOf(d.eta), left), x2 = Math.min(xOf(d.etd), right);
+    const w = Math.max(x2 - x1, 2);
+    const color = REGION_COLOR[d.region] || C.primary;
+    const live = d.eta <= now && now <= d.etd;
+    const g = el("g", { class: "bar" }); g.style.cursor = "default";
+    g.appendChild(el("rect", { x: x1, y: yc - barH / 2, width: w, height: barH, rx: 5, ry: 5, fill: color,
+      stroke: live ? blend(color, "#000000", 0.3) : C.card, "stroke-width": live ? 2 : 1.2 }));
+
+    // 행선지 점 (통계 카드의 점과 같은 색 = 범례)
+    let shift = 0;
+    if (d.country && w >= 120) {
+      g.appendChild(el("circle", { cx: x1 + 10, cy: yc, r: 4.5, fill: COUNTRY_COLOR[d.country], stroke: "#fff", "stroke-width": 1 }));
+      shift = 10;
+    }
+    // 막대 폭에 따라 표기 수준: 넓으면 선명+항차, 좁으면 선명만, 아주 좁으면 없음
+    if (w > spanW / 55) {
+      const avail = w - 8 - shift * 2;
+      const twoLine = w > spanW / 22 && d.voyage && barH >= 27;
+      const name = fitText(d.ship_name || "", twoLine ? 13.5 : 12.5, 700, avail);
+      const cx = x1 + w / 2 + shift;
+      if (name) g.appendChild(el("text", { x: cx, y: twoLine ? yc - 2 : yc, "text-anchor": "middle", "dominant-baseline": twoLine ? "auto" : "central",
+        "font-size": twoLine ? 13.5 : 12.5, "font-weight": 700, fill: "#fff" }, name));
+      if (twoLine) {
+        const vy = fitText(d.voyage, 11, 400, avail);
+        if (vy) g.appendChild(el("text", { x: cx, y: yc + 13, "text-anchor": "middle", "font-size": 11, fill: "#fff", opacity: .78 }, vy));
+      }
+    }
+    let html = `<b>${esc(d.ship_name)}</b>${d.voyage ? " (" + esc(d.voyage) + ")" : ""}\n작업예정: ${fmtDT(d.eta)} ~ ${fmtDT(d.etd)}`;
+    if (d.lane) html += `\n항로: ${esc(d.lane[0])} · ${esc(d.lane[1])} · ${esc(d.lane[2])}`;
+    if (d.country) html += `\n행선지: ${d.country}`;
+    html += `\n<span style="opacity:.7">${esc(d.terminal)} ${esc(d.berth)}선석${live ? " · 접안 중" : ""}</span>`;
+    bindTip(g, html);
+    barLayer.appendChild(g);
+  }
+
+  // ---- 현재 시각선 + 배지
+  if (now >= ws && now <= we) {
+    const x = xOf(now);
+    svg.appendChild(el("line", { x1: x, x2: x, y1: y0 - slack, y2: dateBase, stroke: C.now, "stroke-width": 2.2 }));
+    const label = `NOW ${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+    const bw = textW(label, 11, 700) + 14;
+    svg.appendChild(el("rect", { x: x - bw / 2, y: y0 - slack + 3, width: bw, height: 18, rx: 6, fill: C.now }));
+    svg.appendChild(el("text", { x, y: y0 - slack + 12, "text-anchor": "middle", "dominant-baseline": "central", "font-size": 11, "font-weight": 700, fill: "#fff" }, label));
+  }
+
+  // ---- 구간 밖 다음 입항
+  if (picks.length) {
+    const parts = picks.slice(0, 2).map(d => `${d.terminal} ${d.eta.getMonth() + 1}/${d.eta.getDate()} ${d.ship_name}`);
+    if (picks.length > 2) parts.push(`외 ${picks.length - 2}곳`);
+    svg.appendChild(el("text", { x: right, y: svgH - 6, "text-anchor": "end", "font-size": 12, fill: C.muted }, "구간 밖 다음 입항  ·  " + parts.join("  ·  ")));
+  }
+
+  pane.appendChild(svg);
+  if (!usable.length && S.updated_at) {
+    const m = document.createElement("div"); m.className = "empty-msg"; m.textContent = "이 기간에 예정된 선박이 없습니다"; pane.appendChild(m);
+  }
+}
+
+// ===================== 본선작업현황 =====================
+const progressColor = (p) => p < 30 ? "#fa5252" : p < 70 ? "#f5a524" : "#12b886";
+function renderWork(pane) {
+  pane.innerHTML = "";
+  const rows = [...S.work].sort((a, b) => {
+    const na = parseInt((a.berth || "").match(/\d+/) || 999), nb = parseInt((b.berth || "").match(/\d+/) || 999);
+    return (a.terminal || "").localeCompare(b.terminal || "") || na - nb || (a.berth || "").localeCompare(b.berth || "");
+  });
+  const box = document.createElement("div"); box.className = "work";
+  if (!rows.length) {
+    pane.appendChild(box);
+    const m = document.createElement("div"); m.className = "empty-msg"; m.textContent = S.updated_at ? "현재 작업 중인 본선이 없습니다" : "불러오는 중..."; pane.appendChild(m);
+    return;
+  }
+  box.innerHTML = `<div class="axis"><div></div><div class="ticks">${[0, 25, 50, 75, 100].map(p => `<span style="left:${p}%">${p}%</span>`).join("")}</div><div></div></div>`;
+  for (const d of rows) {
+    const pct = Math.max(0, Math.min(100, +d.progress || 0));
+    const color = progressColor(pct), inside = pct >= 18;
+    const row = document.createElement("div"); row.className = "row";
+    row.innerHTML = `<div class="lb">${esc(d.terminal)} ${esc(d.berth)}선석</div>
+      <div class="track">${pct > 0 ? `<div class="fill" style="width:${pct}%;background:${color}"></div>` : ""}
+        <div class="txt" style="${inside ? `left:${pct / 2}%;transform:translate(-50%,-50%);color:#fff` : `left:calc(${pct}% + 8px);color:${C.text}`}">
+          <div class="n">${esc(d.ship_name)}(${esc(d.line || "")})</div>${d.voyage ? `<div class="vy" style="${inside ? "" : "color:" + C.muted}">${esc(d.voyage)}</div>` : ""}</div>
+      </div>
+      <div class="pct" style="color:${color}">${pct}%</div>`;
+    const time = d.eta && d.etd ? `\n작업예정: ${fmtDT(parseDT(d.eta))} ~ ${fmtDT(parseDT(d.etd))}` : "";
+    bindTip(row, `<b>${esc(d.ship_name)}(${esc(d.line || "")})</b> · ${esc(d.voyage || "")}${time}\n진행률 ${pct}%  ·  양하 ${esc(d.discharge || "-")} / 적하 ${esc(d.load || "-")}`);
+    box.appendChild(row);
+  }
+  pane.appendChild(box);
+}
+
+// ===================== 국내공컨현황 =====================
+function renderEmpty(pane) {
+  pane.innerHTML = "";
+  const byKey = {};
+  for (const d of S.empty) byKey[d.carrier + "|" + d.terminal] = d;
+  const rows = EMPTY_TERMINALS.map(t => ["DYS", t]);
+  const rowColor = {}, seen = {};
+  for (const [, t] of rows) {
+    const rg = TERMINAL_REGION[t] || ""; const n = seen[rg] || 0; seen[rg] = n + 1;
+    rowColor[t] = blend(REGION_COLOR[rg] || C.primary, "#ffffff", Math.min(0.45, 0.34 * n));
+  }
+  const get = (c, t) => byKey[c + "|" + t];
+  const cellTotal = (k) => rows.reduce((s, [c, t]) => s + ((get(c, t) || {}).counts || {})[k] || 0, 0);
+  const totalAll = rows.reduce((s, [c, t]) => s + ((get(c, t) || {}).total || 0), 0);
+  const val = (v, cls) => `<td class="${cls || ""}${v ? "" : " zero"}">${v ? fmtN(v) : "–"}</td>`;
+  const gcls = (i, n) => "gc" + (i === 0 ? " gl" : "") + (i === n - 1 ? " gr" : "");   // 그룹 안 위치별 테두리
+
+  let h = `<div class="emp"><div class="head"><h2>국내 공컨 재고</h2><span class="m">선사코드 DYS · ${rows.length}개 터미널</span>
+    <span class="tot">총 재고 <b>${fmtN(totalAll)}</b> 개</span></div><table class="et"><thead><tr><th class="lb" rowspan="2">구분</th>`;
+  for (const [g, cols] of EMPTY_GROUPS) h += `<th class="g" colspan="${cols.length}"><span>${g}</span></th><th class="gap" rowspan="2"></th>`;
+  h += `<th rowspan="2" style="color:var(--text)">합계</th></tr><tr>`;
+  for (const [, cols] of EMPTY_GROUPS) cols.forEach(([, sub], i) => { h += `<th class="${gcls(i, cols.length)}">${sub}</th>`; });
+  h += `</tr></thead><tbody>`;
+  for (const [c, t] of rows) {
+    const d = get(c, t), counts = d ? d.counts : {};
+    h += `<tr><td class="lb"><span class="dot" style="background:${rowColor[t]}"></span>${t}<span class="rg">${TERMINAL_REGION[t] || ""}</span></td>`;
+    for (const [, cols] of EMPTY_GROUPS) { cols.forEach(([k], i) => { h += val(counts[k] || 0, gcls(i, cols.length)); }); h += `<td class="gap"></td>`; }
+    h += val(d ? d.total : 0, "tot") + `</tr>`;
+  }
+  h += `</tbody><tfoot><tr><td class="lb">합계</td>`;
+  for (const [, cols] of EMPTY_GROUPS) { cols.forEach(([k], i) => { h += val(cellTotal(k), gcls(i, cols.length)); }); h += `<td class="gap"></td>`; }
+  h += val(totalAll, "tot") + `</tr></tfoot></table>`;
+  h += `<div class="note">RF(냉동)는 광양서부만 타입별 재고를 제공합니다 · 신선대/감만의 FR은 플랫랙 · E1CT/한진신항은 GP/HQ만 제공</div>`;
+  // 터미널별 비중
+  h += `<div class="share"><div class="lb">터미널별 비중</div><div class="bar">`;
+  for (const [c, t] of rows) { const v = (get(c, t) || {}).total || 0; if (v) h += `<i style="flex:${v};background:${rowColor[t]}"></i>`; }
+  h += `</div><div class="lg">`;
+  for (const [c, t] of rows) { const v = (get(c, t) || {}).total || 0; const p = totalAll ? Math.round(v / totalAll * 100) : 0;
+    h += `<span><i style="background:${rowColor[t]}"></i>${t}<span class="c">${fmtN(v)}개 · ${p}%</span></span>`; }
+  h += `</div></div></div>`;
+  pane.innerHTML = h;
+  if (!S.empty.length) { const m = document.createElement("div"); m.className = "empty-msg"; m.textContent = S.updated_at ? "" : "불러오는 중..."; pane.appendChild(m); }
+}
+
+// ===================== 렌더 진입 =====================
+function renderPane() {
+  for (const p of document.querySelectorAll(".pane")) p.classList.remove("on");
+  const paneKey = tab === "work" ? "work" : tab === "empty" ? "empty" : "gantt";
+  const pane = $(paneKey + "Pane"); pane.classList.add("on");
+  hideTip();
+  if (paneKey === "gantt") renderGantt(pane, tab);
+  else if (paneKey === "work") renderWork(pane);
+  else renderEmpty(pane);
+}
+function renderAll() {
+  const [ws, we] = ganttWindow();
+  renderStats(S.data.filter(d => inWindow(d, ws, we)));
+  renderStatus();
+  renderPane();
+}
+
+// ===================== 데이터/실시간 =====================
+// 정적 모드: GitHub Pages 처럼 server.py 없이 올라간 경우. build_static.py 가 만든
+// ./data.json 을 읽고, SSE/수동조회는 없다(GitHub Actions 가 10분마다 새로 올림).
+const STATIC = location.hostname.endsWith("github.io") || location.protocol === "file:"
+            || location.search.includes("static");
+const DATA_URL = STATIC ? "./data.json" : "/api/data";
+async function loadData() {
+  try {
+    const r = await fetch(DATA_URL, { cache: "no-store" });
+    const j = await r.json();
+    j.data = (j.data || []).map(d => ({ ...d, eta: parseDT(d.eta), etd: parseDT(d.etd) }));
+    if (STATIC) { delete j.server_now; j.fetching = false; }   // 파일 생성 시각은 현재 시각이 아니다
+    S = { ...S, ...j };
+    renderAll();
+  } catch (e) {
+    $("statusText").textContent = STATIC ? "데이터 파일(data.json)을 읽을 수 없습니다"
+                                         : "서버에 연결할 수 없습니다 (server.py 가 실행 중인지 확인)";
+    $("status").classList.add("err");
+  }
+}
+function connectSSE() {
+  const es = new EventSource("/api/events");
+  es.onopen = () => $("live").classList.add("on");
+  es.onerror = () => $("live").classList.remove("on");       // EventSource 가 알아서 재접속한다
+  es.onmessage = (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.type === "fetching") { S.fetching = true; renderStatus(); }
+    else if (m.type === "update") { S.fetching = false; loadData(); }
+    else if (m.type === "hello") { S.fetching = !!m.fetching; renderStatus(); if (m.generation !== S.generation) loadData(); }
+  };
+}
+$("refreshBtn").onclick = async () => {
+  if (STATIC) { await loadData(); toast("GitHub 가 10분마다 자동으로 새로 올립니다. 최신 파일을 다시 읽었습니다"); return; }
+  try {
+    const r = await fetch("/api/refresh", { method: "POST" });
+    const j = await r.json();
+    if (j.status === "cooldown") toast(`방금 갱신했습니다. ${j.wait}초 후 다시 시도해 주세요`);
+    else if (j.status === "already") toast("이미 조회 중입니다");
+    else { S.fetching = true; renderStatus(); }
+  } catch { toast("서버에 연결할 수 없습니다"); }
+};
+
+let resizeT;
+addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(renderPane, 200); });
+// 카드 크기가 바뀌면(창 크기·줌·글꼴 로딩 등) 간트를 다시 그린다. 막대 두께와 말줄임이 픽셀 기준이라서.
+let lastCardH = 0;
+new ResizeObserver(() => {
+  const h = $("card").clientHeight;
+  if (Math.abs(h - lastCardH) < 2) return;
+  lastCardH = h; clearTimeout(resizeT); resizeT = setTimeout(renderPane, 150);
+}).observe($("card"));
+setInterval(() => { renderNextChip(); if (tab !== "work" && tab !== "empty") renderPane(); }, 60000);   // 현재 시각선 1분마다
+setInterval(loadData, 180000);                                                                           // SSE 가 끊겨도 3분마다 보정
+document.addEventListener("visibilitychange", () => { if (!document.hidden) loadData(); });
+
+buildTabs();
+renderStatus();
+renderPane();
+loadData();
+if (STATIC) $("live").style.display = "none";
+else if (!location.search.includes("nosse")) connectSSE();   // ?nosse=1 : 실시간 푸시 없이 폴링만
+</script>
+</body>
+</html>

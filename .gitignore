@@ -6,3 +6,5 @@ __pycache__/
 dist_share/
 build_share/
 BerthMonitor.spec
+site/
+*.bak_*
