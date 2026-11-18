@@ -112,6 +112,16 @@ table.et tfoot td.gr { border-bottom-right-radius: 12px; border-bottom: 1px soli
 table.et tfoot td.gc { border-bottom: 1px solid var(--table-line); }
 table.et thead tr:last-child th.gc { border-bottom: 1px solid var(--table-line); }
 table.et td.lb, table.et th.lb { text-align: left; }
+.pies { display: flex; flex-wrap: wrap; gap: 18px 56px; padding: 26px 12px 4px; }
+.pie { display: flex; align-items: center; gap: 22px; min-width: 300px; }
+.pie svg { flex: none; width: 168px; height: 168px; }
+.pie svg path, .pie svg circle.seg { stroke: var(--card); stroke-width: 2; transition: opacity .12s; }
+.pie svg:hover .seg { opacity: .55; } .pie svg .seg:hover { opacity: 1; }
+.pie .lb { font-size: 12px; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
+.pie .lg { display: grid; grid-template-columns: auto auto auto; gap: 6px 14px; font-size: 12.5px; align-items: center; }
+.pie .lg i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; }
+.pie .lg .n { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.pie .lg .p { font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
 .emp .note { color: var(--muted); font-size: 11.5px; padding: 10px 12px 0; }
 table.et th.gap, table.et td.gap { width: 22px; padding: 0; background: transparent !important; }
 table.et thead tr:last-child th { border-bottom: 1px solid var(--table-line); }
@@ -659,9 +669,45 @@ function renderEmpty(pane) {
   h += `</div><div class="lg">`;
   for (const [c, t] of rows) { const v = (get(c, t) || {}).total || 0; const p = totalAll ? Math.round(v / totalAll * 100) : 0;
     h += `<span><i style="background:${rowColor[t]}"></i>${t}<span class="c">${fmtN(v)}개 · ${p}%</span></span>`; }
-  h += `</div></div></div>`;
+  h += `</div></div>`;
+  // 원그래프 2개: 터미널별(막대와 같은 색) · 규격별
+  const sumK = (...ks) => ks.reduce((s, k) => s + cellTotal(k), 0);
+  const sizeItems = [["20' DC", sumK("GP20"), "#7048e8"], ["40' DC", sumK("GP40"), "#e64980"], ["40' HC", sumK("HQ40"), "#64748b"]];
+  sizeItems.push(["특수(OT·FR·RF)", Math.max(0, totalAll - sizeItems.reduce((s, x) => s + x[1], 0)), "#c5cbd6"]);
+  h += `<div class="pies">` + donutHTML("터미널별 비중", rows.map(([c, t]) => [t, (get(c, t) || {}).total || 0, rowColor[t]]))
+     + donutHTML("규격별 비중", sizeItems) + `</div></div>`;
   pane.innerHTML = h;
+  pane.querySelectorAll(".pie .seg").forEach(n => bindTip(n, n.dataset.tip));
   if (!S.empty.length) { const m = document.createElement("div"); m.className = "empty-msg"; m.textContent = S.updated_at ? "" : "불러오는 중..."; pane.appendChild(m); }
+}
+
+// 도넛 그래프. items = [[이름, 값, 색], ...]. 가운데에 합계, 오른쪽에 이름·개수·비율 범례.
+function donutHTML(title, items) {
+  const total = items.reduce((s, x) => s + x[1], 0);
+  const R = 78, r = 48, cx = 84, cy = 84;
+  const pt = (rad, a) => [cx + rad * Math.sin(a), cy - rad * Math.cos(a)].map(v => v.toFixed(2)).join(" ");
+  const pct = v => total ? (v / total * 100) : 0;
+  const pctTxt = v => { const p = pct(v); return (p > 0 && p < 1 ? "<1" : Math.round(p)) + "%"; };
+  let svg = `<svg viewBox="0 0 168 168" role="img" aria-label="${esc(title)}">`;
+  if (!total) svg += `<circle cx="${cx}" cy="${cy}" r="${(R + r) / 2}" fill="none" style="stroke:var(--track);stroke-width:${R - r}"/>`;
+  let a0 = 0;
+  for (const [name, v, color] of items) {
+    if (!v) continue;
+    const tip = `<b>${esc(name)}</b>
+${fmtN(v)}개 · ${pctTxt(v)}`;
+    if (v === total) {       // 한 항목이 전부면 호(arc)로는 원을 못 그린다
+      svg += `<path class="seg" data-tip="${tip}" fill="${color}" fill-rule="evenodd" d="M ${cx} ${cy - R} A ${R} ${R} 0 1 1 ${cx} ${cy + R} A ${R} ${R} 0 1 1 ${cx} ${cy - R} Z M ${cx} ${cy - r} A ${r} ${r} 0 1 0 ${cx} ${cy + r} A ${r} ${r} 0 1 0 ${cx} ${cy - r} Z"/>`;
+      break;
+    }
+    const a1 = a0 + v / total * Math.PI * 2, big = a1 - a0 > Math.PI ? 1 : 0;
+    svg += `<path class="seg" data-tip="${tip}" fill="${color}" d="M ${pt(R, a0)} A ${R} ${R} 0 ${big} 1 ${pt(R, a1)} L ${pt(r, a1)} A ${r} ${r} 0 ${big} 0 ${pt(r, a0)} Z"/>`;
+    a0 = a1;
+  }
+  svg += `<text x="${cx}" y="${cy - 1}" text-anchor="middle" font-size="22" font-weight="700" fill="currentColor">${fmtN(total)}</text>
+    <text x="${cx}" y="${cy + 16}" text-anchor="middle" font-size="11" style="fill:var(--muted)">총 재고(개)</text></svg>`;
+  let lg = "";
+  for (const [name, v, color] of items) lg += `<span><i style="background:${color}"></i>${esc(name)}</span><span class="n">${fmtN(v)}개</span><span class="p">${pctTxt(v)}</span>`;
+  return `<div class="pie">${svg}<div><div class="lb">${esc(title)}</div><div class="lg">${lg}</div></div></div>`;
 }
 
 // ===================== 태풍 모니터링 =====================
