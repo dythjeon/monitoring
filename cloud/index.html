@@ -136,12 +136,12 @@ table.et tfoot td.tot { color: var(--primary); font-size: 16px; }
 /* ---- 태풍 모니터링 ---- */
 .ty { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; padding: 2px; align-items: start; }
 .ty-map { position: relative; background: #d9e6f2; border-radius: 14px; overflow: hidden; border: 1px solid var(--border); min-height: 360px; }
-.ty-map svg { display: block; width: 100%; height: auto; }
+.ty-map svg { display: block; width: 100%; }
 .ty-map .legend { position: absolute; left: 10px; bottom: 10px; display: flex; flex-wrap: wrap; gap: 4px 10px; background: rgba(255,255,255,.88); border-radius: 10px; padding: 7px 10px; font-size: 11px; color: var(--text); backdrop-filter: blur(4px); max-width: calc(100% - 20px); }
 .ty-map .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
 .ty-map .legend .fc { width: 14px; height: 0; border-top: 2px dashed #555; border-radius: 0; vertical-align: 3px; }
 .ty-map .stamp { position: absolute; right: 10px; top: 10px; font-size: 11px; color: var(--muted); background: rgba(255,255,255,.85); border-radius: 8px; padding: 4px 8px; }
-.ty-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ty-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; max-height: var(--mapH, none); overflow: auto; padding-right: 2px; }
 .ty-side h2 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 8px; }
 .ty-side .m { color: var(--muted); font-size: 11.5px; }
 .ty-quiet { background: var(--bg); border-radius: 14px; padding: 18px 16px; text-align: center; }
@@ -162,7 +162,7 @@ table.et tfoot td.tot { color: var(--primary); font-size: 16px; }
 .ty-src .lb { font-size: 11.5px; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
 .ty-src .row { display: flex; flex-wrap: wrap; gap: 6px; }
 .ty-err { font-size: 11px; color: var(--now); white-space: pre-wrap; }
-@media (max-width: 980px) { .ty { grid-template-columns: 1fr; } }
+@media (max-width: 980px) { .ty { grid-template-columns: 1fr; } .ty-side { max-height: none; } }
 
 footer { text-align: center; color: #b4b8c2; font-size: 11px; padding: 0 0 14px; }
 .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: #1c1f26; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; }
@@ -715,13 +715,18 @@ function renderTyphoon(pane) {
 
 function drawTyMap(box, storms, T) {
   box.innerHTML = "";
-  const W = Math.max(box.clientWidth || 0, 560);
   const lonSpan = TY_VIEW.lon1 - TY_VIEW.lon0, latSpan = (TY_VIEW.lat1 - TY_VIEW.lat0) * TY_YSCALE;
-  const H = Math.round(W * latSpan / lonSpan);
+  // 지도가 화면보다 커지면 카드가 늘어나 페이지 전체가 밀린다. 높이를 화면에 맞춰 제한하고
+  // 폭은 비율대로 줄인다(남는 좌우 여백은 바다색이라 티가 안 난다).
+  const availH = Math.max(380, Math.min(innerHeight - 310, 900));
+  let W = Math.max(box.clientWidth || 0, 320), H = Math.round(W * latSpan / lonSpan);
+  if (H > availH) { H = availH; W = Math.round(H * lonSpan / latSpan); }
+  box.style.height = H + "px";
+  box.parentElement && box.parentElement.style.setProperty("--mapH", H + "px");
   const k = W / lonSpan;
   const X = (lon) => (lon - TY_VIEW.lon0) * k, Y = (lat) => (TY_VIEW.lat1 - lat) * k * TY_YSCALE;
   const kmPx = (km) => km / 111 * k;
-  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H });
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", height: H });
   svg.appendChild(el("rect", { x: 0, y: 0, width: W, height: H, fill: "#d9e6f2" }));
 
   // 경위선
