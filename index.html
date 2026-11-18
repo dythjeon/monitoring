@@ -316,9 +316,11 @@ header .btn:hover { background: #ecebfc; }
 footer { color: #a3a8b8; }
 
 /* 비밀번호 화면 */
-.gate { background: linear-gradient(90deg, rgba(6,12,34,.55) 0%, rgba(6,12,34,.15) 55%, rgba(6,12,34,0) 100%), #0a1330 url("./gate.jpg") center / cover no-repeat; }
-.gate form { border: 0; border-radius: 16px; box-shadow: 0 30px 70px -20px rgba(0,0,0,.6); background: rgba(255,255,255,.96); }
-@media (min-width: 1000px) { .gate { justify-content: flex-start; padding-left: 14vw; } }      /* 넓은 화면: 입력 상자를 왼쪽에 둬서 오른쪽의 배가 보이게 */
+.gate { background: #0a1330; overflow: hidden; }
+/* 배경 사진: 왼쪽 끝을 기준으로 15% 키워서 배가 오른쪽으로 밀리게 한다(가운데 입력 상자에 가리지 않도록) */
+.gate::before { content: ""; position: absolute; inset: 0; background: url("./gate.jpg") left top / cover no-repeat; transform: scale(1.15); transform-origin: left top; }
+.gate::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(6,12,34,.38) 0%, rgba(6,12,34,.12) 45%, rgba(6,12,34,0) 75%); }
+.gate form { position: relative; z-index: 1; border: 0; border-radius: 16px; box-shadow: 0 30px 70px -20px rgba(0,0,0,.6); background: rgba(255,255,255,.96); }
 .gate .btn { background: var(--primary); color: #fff; }
 </style>
 </head>
