@@ -4,7 +4,7 @@ cd /d "%~dp0"
 REM 수정 사항을 GitHub 에 올린다. 원격 저장소가 없으면 주소를 물어 등록한다.
 git remote get-url origin >nul 2>&1
 if errorlevel 1 (
-  set /p REPO=GitHub 저장소 주소(예: https://github.com/아이디/berth-monitor.git): 
+  set /p REPO=GitHub 저장소 주소(예: https://github.com/아이디/monitoring.git): 
   git remote add origin %REPO%
 )
 git add -A
