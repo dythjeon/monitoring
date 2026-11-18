@@ -311,13 +311,25 @@ def fetch_hjit_work_status():
 
     vesselStatus 화면과 같은 계산: /HJIT/document/vesselContainer 로 컨테이너 목록을 받아
     QC 번호가 있는 건만 세고, psituation C(완료)/P(계획) 로 나눠 진행률 = 완료/(완료+계획).
-    접안 중(Working/Berthed)인 추적 선박만. 반환 형식은 fetch_bptc_work_status 와 같다.
+    선석별 현재 본선(작업중/접안완료/접안예정) 1척씩, 선사 무관. 반환 형식은 fetch_bptc_work_status 와 같고
+    status(작업중/접안완료/접안예정)가 추가된다.
     """
     session = _hjit_session()
-    rows = []
+    # HJIT 화면과 같은 규칙: 오늘 일정에서 선석(A/B/C)마다 작업중 > 접안완료 > 접안예정 순으로 1척.
+    # 선사 필터는 하지 않는다(본선작업현황은 선석 점유 상황을 보는 화면이라서).
+    prio = {"Working": 0, "Berthed": 1, "Planned": 2}
+    by_berth = {}
     for v in _hjit_schedule(session, -1, 0):
-        if v.get("status") not in ("Working", "Berthed") or not _hjit_tracked(v):
+        if v.get("status") not in prio:
             continue
+        b = (v.get("berthNo") or "").strip()
+        cur = by_berth.get(b)
+        if cur is None or (prio[v["status"]], -(_parse_dt(v.get("etb")) or datetime.min).timestamp()) \
+                < (prio[cur["status"]], -(_parse_dt(cur.get("etb")) or datetime.min).timestamp()):
+            by_berth[b] = v
+    rows = []
+    for b in sorted(by_berth):
+        v = by_berth[b]
         voyage = f"{v.get('voyageSeq')}/{v.get('voyageYear')}"
         cd = cl = pd = pl = 0
         try:
@@ -338,6 +350,7 @@ def fetch_hjit_work_status():
         total = cd + cl + pd + pl
         rows.append({
             "terminal": "한진신항",
+            "status": {"Working": "작업중", "Berthed": "접안완료", "Planned": "접안예정"}[v["status"]],
             "berth": (v.get("berthNo") or "").strip(),
             "voyage": _hjit_voyage(v),
             "ship_name": (v.get("vesselName") or "").strip(),

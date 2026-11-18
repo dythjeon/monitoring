@@ -410,9 +410,12 @@ function renderGantt(pane, key) {
   const W = Math.max(pane.clientWidth, 860);
   const H = Math.max(pane.clientHeight, 360);
   const P = 12, G = 13, HOUR_ROW = 18, DATE_ROW = 34;
-  const termW = Math.max(0, ...rows.map(r => textW(r.term, 14, 700)));
   const berthLabel = (b) => b == null ? "—" : `${b}선석`;
-  const berthW = Math.max(0, ...rows.map(r => textW(berthLabel(r.berth), 13.5, 400)));
+  // 탭을 바꿔도 표가 좌우로 움직이지 않게, 열 폭은 전체 자료(모든 터미널·선석) 기준으로 고정
+  const allTerms = [...new Set([...TERMINAL_ORDER, ...S.data.map(d => d.terminal)])];
+  const allBerths = [...new Set(S.data.filter(d => inWindow(d, ws, we)).map(d => d.berth))];
+  const termW = Math.max(0, ...allTerms.map(t => textW(t, 14, 700)));
+  const berthW = Math.max(textW("—", 13.5, 400), ...allBerths.map(b => textW(berthLabel(b), 13.5, 400)));
   const sep1 = P + termW + G / 2, sep2 = sep1 + G / 2 + berthW + G / 2;
   const left = sep2 + G, right = W - 14;
   // 구간 밖 다음 입항 안내 줄
@@ -582,14 +585,15 @@ function renderWork(pane) {
   box.innerHTML = `<div class="axis"><div></div><div class="ticks">${[0, 25, 50, 75, 100].map(p => `<span style="left:${p}%">${p}%</span>`).join("")}</div><div></div></div>`;
   for (const d of rows) {
     const pct = Math.max(0, Math.min(100, +d.progress || 0));
-    const color = progressColor(pct), inside = pct >= 18;
+    const planned = d.status === "접안예정";
+    const color = planned ? "#9aa3b2" : progressColor(pct), inside = pct >= 18;
     const row = document.createElement("div"); row.className = "row";
     row.innerHTML = `<div class="lb">${esc(d.terminal)} ${esc(d.berth)}선석</div>
       <div class="track">${pct > 0 ? `<div class="fill" style="width:${pct}%;background:${color}"></div>` : ""}
         <div class="txt" style="${inside ? `left:${pct / 2}%;transform:translate(-50%,-50%);color:#fff` : `left:calc(${pct}% + 8px);color:${C.text}`}">
-          <div class="n">${esc(d.ship_name)}(${esc(d.line || "")})</div>${d.voyage ? `<div class="vy" style="${inside ? "" : "color:" + C.muted}">${esc(d.voyage)}</div>` : ""}</div>
+          <div class="n">${esc(d.ship_name)}(${esc(d.line || "")})</div>${d.voyage || d.status ? `<div class="vy" style="${inside ? "" : "color:" + C.muted}">${d.status ? esc(d.status) + " · " : ""}${esc(d.voyage || "")}</div>` : ""}</div>
       </div>
-      <div class="pct" style="color:${color}">${pct}%</div>`;
+      <div class="pct" style="color:${color}">${planned ? "대기" : pct + "%"}</div>`;
     const time = d.eta && d.etd ? `\n작업예정: ${fmtDT(parseDT(d.eta))} ~ ${fmtDT(parseDT(d.etd))}` : "";
     bindTip(row, `<b>${esc(d.ship_name)}(${esc(d.line || "")})</b> · ${esc(d.voyage || "")}${time}\n진행률 ${pct}%  ·  양하 ${esc(d.discharge || "-")} / 적하 ${esc(d.load || "-")}`);
     box.appendChild(row);
@@ -647,13 +651,29 @@ const TY_VIEW = { lon0: 98, lon1: 162, lat0: 2, lat1: 52 };      // 베트남 ~ 
 const TY_YSCALE = 1.12;                                           // 중위도에서 모양이 덜 눌리게
 const TY_CAT = { TD: ["열대저압부", "#7c8aa5"], TS: ["열대폭풍", "#22a06b"], STS: ["강한 열대폭풍", "#d99a12"],
                  TY: ["태풍(중)", "#ef6a1f"], STY: ["태풍(강)", "#dc2f2f"], VTY: ["매우 강·초강력", "#8a2bd1"] };
-const TY_LABELS = [["한국", 127.6, 36.2], ["북한", 126.8, 39.8], ["일본", 137.6, 36.2], ["중국", 109.5, 33.5],
+const TY_LABELS = [["한국", 127.6, 36.2], ["북한", 126.8, 39.8], ["일본", 139.2, 37.2], ["중국", 109.5, 33.5],
                    ["러시아", 133.0, 47.5], ["베트남", 105.3, 19.0], ["대만", 121.0, 23.7], ["필리핀", 122.3, 12.3],
                    ["몽골", 104.5, 46.5], ["태국", 101.0, 15.5], ["라오스", 103.2, 19.5], ["캄보디아", 105.0, 12.4],
                    ["남중국해", 114.5, 15.0], ["동중국해", 125.5, 29.0],
                    ["동해", 134.5, 40.0], ["서해", 124.0, 36.5], ["필리핀해", 134.0, 17.5], ["태평양", 151.0, 30.0]];
 const TY_SEA = new Set(["남중국해", "동중국해", "동해", "서해", "필리핀해", "태평양"]);
-const TY_PORTS = [["부산", 129.04, 35.10, 1], ["인천", 126.62, 37.46, 1], ["광양", 127.70, 34.90, -1]];   // 마지막: 라벨 방향
+// [이름, 경도, 위도, 나라, 라벨 anchor, dx, dy]  - 라벨은 겹치지 않게 방향을 하나씩 정했다
+const TY_PORTS = [
+  ["인천", 126.62, 37.46, "KR", "end", -5, 3], ["군산", 126.62, 35.98, "KR", "end", -5, 3],
+  ["광양", 127.70, 34.90, "KR", "end", -5, 9], ["부산", 129.04, 35.10, "KR", "start", 5, 3],
+  ["도쿄", 139.77, 35.65, "JP", "start", 5, 0], ["요코하마", 139.65, 35.45, "JP", "start", 5, 11],
+  ["시미즈", 138.49, 35.02, "JP", "middle", 0, 12], ["나고야", 136.88, 35.08, "JP", "middle", 0, 12],
+  ["오사카", 135.43, 34.65, "JP", "middle", 2, 12], ["고베", 135.19, 34.68, "JP", "end", -5, 0],
+  ["대련", 121.63, 38.92, "CN", "start", 5, 3], ["신강(천진)", 117.75, 38.98, "CN", "end", -5, 3],
+  ["연태", 121.39, 37.54, "CN", "start", 5, 3], ["청도", 120.32, 36.07, "CN", "start", 5, 4],
+  ["연운항", 119.22, 34.60, "CN", "end", -5, 3], ["난징", 118.78, 32.06, "CN", "end", -5, 3],
+  ["장자강", 120.56, 31.87, "CN", "end", -5, 10], ["상해", 121.49, 31.23, "CN", "start", 5, 3],
+  ["닝보", 121.85, 29.93, "CN", "start", 5, 4], ["샤먼", 118.08, 24.48, "CN", "start", 5, 3],
+  ["심천(셔코우)", 113.90, 22.48, "CN", "end", -5, -2], ["홍콩", 114.17, 22.30, "CN", "start", 5, 10],
+  ["하이퐁", 106.68, 20.86, "VN", "start", 5, 3], ["호치민", 106.70, 10.78, "VN", "start", 5, 3],
+  ["방콕", 100.52, 13.72, "TH", "middle", 0, -6], ["람차방", 100.88, 13.08, "TH", "start", 5, 10],
+];
+const TY_PORT_COLOR = { KR: "#2f6fed", JP: "#c2410c", CN: "#b91c1c", VN: "#047857", TH: "#6d28d9" };
 const TY_FC_RADIUS_KM = { 12: 60, 24: 110, 36: 160, 48: 210, 60: 270, 72: 330, 96: 450, 120: 560 };   // 예보원 반경(근사)
 let COAST = null, coastLoading = null;
 function loadCoast() {
@@ -729,10 +749,13 @@ function drawTyMap(box, storms, T) {
     svg.appendChild(el("text", { x: X(lon), y: Y(lat), "text-anchor": "middle", "font-size": sea ? 10.5 : 12, "font-weight": sea ? 400 : 600,
       fill: sea ? "#7a93b3" : "#6b7280", "font-style": sea ? "italic" : "normal", "letter-spacing": sea ? ".08em" : "0" }, name));
   }
-  // 우리 항만
-  for (const [name, lon, lat, side] of TY_PORTS) {
-    svg.appendChild(el("circle", { cx: X(lon), cy: Y(lat), r: 3.2, fill: C.primary, stroke: "#fff", "stroke-width": 1.2 }));
-    svg.appendChild(el("text", { x: X(lon) + 5 * side, y: Y(lat) + 3.5, "text-anchor": side > 0 ? "start" : "end", "font-size": 10, "font-weight": 700, fill: C.primary }, name));
+  // 항만 (한국·일본·중국·베트남·태국 주요 항)
+  for (const [name, lon, lat, cc, anchor, dx, dy] of TY_PORTS) {
+    const col = TY_PORT_COLOR[cc] || "#475569", kr = cc === "KR";
+    svg.appendChild(el("circle", { cx: X(lon), cy: Y(lat), r: kr ? 3.4 : 2.6, fill: col, stroke: "#fff", "stroke-width": 1.2 }));
+    const t = el("text", { x: X(lon) + dx, y: Y(lat) + dy, "text-anchor": anchor, "font-size": kr ? 10.5 : 9.5, "font-weight": kr ? 700 : 600,
+      fill: col, stroke: "#ffffff", "stroke-width": 3, "paint-order": "stroke", "stroke-linejoin": "round" }, name);
+    svg.appendChild(t);
   }
 
   // 태풍
