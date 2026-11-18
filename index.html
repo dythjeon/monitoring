@@ -259,6 +259,66 @@ footer { text-align: center; color: #b4b8c2; font-size: 11px; padding: 0 0 14px;
   .card { padding: 10px; min-height: 360px; }
   .work .axis, .work .row { grid-template-columns: 110px 1fr 48px; }
 }
+
+/* =====================================================================
+   테마 (2026-11-18): 짙은 네이비 머리띠 + 인디고 포인트 + 밝은 회색 바탕.
+   이 블록만 지우면 이전 밝은 테마로 돌아간다(백업: git tag backup-20261118-before-redesign).
+   ===================================================================== */
+:root {
+  --bg: #f2f3f7; --border: #e6e8ef; --text: #101426; --muted: #858b9a;
+  --primary: #3f3cbb; --primary-dark: #2f2c97; --primary-soft: #ecebfc;
+  --hover-row: #f3f2fe; --sat: #3f3cbb; --table-line: #dcdfe8;
+  --navy: #0d1836; --navy-2: #1a2a5e; --navy-line: rgba(255,255,255,.1);
+  --shadow: 0 1px 2px rgba(16,20,38,.04), 0 10px 26px -14px rgba(30,36,80,.28);
+}
+header { background: linear-gradient(110deg, #0a1330 0%, #14224f 55%, #2a2f86 100%); border-bottom: 0; color: #fff; }
+.hd { padding: 20px 28px; }
+.hd h1 { color: #fff; font-size: 21px; letter-spacing: .005em; }
+.hd .sub { color: rgba(255,255,255,.58); }
+.hd .logo { background: #fff; border-radius: 10px; padding: 5px 8px; height: 48px; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+header .status { color: rgba(255,255,255,.72); }
+header .status.err { color: #ffa8a8; }
+header .live { background: rgba(255,255,255,.3); }
+header .chip { background: rgba(255,255,255,.1); color: rgba(255,255,255,.78); border: 1px solid rgba(255,255,255,.16); }
+header .spin { border-color: rgba(255,255,255,.25); border-top-color: #fff; }
+.btn { border-radius: 8px; }
+header .btn { background: #fff; color: var(--primary); box-shadow: 0 4px 14px rgba(0,0,0,.2); }
+header .btn:hover { background: #ecebfc; }
+
+/* 환율 띠: 머리띠 아래 네이비 띠 */
+.fx { background: var(--navy); border-bottom: 0; color: #fff; }
+.fx::before { background: linear-gradient(90deg, var(--navy), rgba(13,24,54,0)); }
+.fx::after { background: linear-gradient(270deg, var(--navy), rgba(13,24,54,0)); }
+.fx .it { border-right-color: var(--navy-line); padding: 11px 28px; }
+.fx .it .cd { color: #fff; }
+.fx .it .nm { color: rgba(255,255,255,.5); }
+.fx .it .rt { color: #fff; }
+.fx .it .ch { color: rgba(255,255,255,.55); }
+.fx .it .ch.up { color: #ff8f8f; } .fx .it .ch.dn { color: #7fb6ff; }
+.fx .it.src { color: rgba(255,255,255,.42); }
+
+/* 카드·탭 */
+.stat { border-radius: 12px; padding: 15px 20px; }
+.stat .v { font-size: 27px; }
+.stat.em { background: linear-gradient(135deg, #3f3cbb, #5a4fe0); border-color: transparent; box-shadow: 0 12px 26px -12px rgba(63,60,187,.7); }
+.tabs { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 5px; gap: 3px; box-shadow: var(--shadow); }
+.tab { border-radius: 8px; padding: 8px 17px; }
+.tab:hover { color: var(--primary); background: var(--primary-soft); }
+.tab.on, .tab.on:hover { background: var(--primary); color: #fff; box-shadow: 0 6px 14px -6px rgba(63,60,187,.7); }
+.card { border-radius: 14px; }
+.emp .head h2, .tf .head h2, .ty-side h2 { letter-spacing: -.01em; }
+.emp .head h2::before, .tf .head h2::before { content: ""; display: inline-block; width: 4px; height: 15px; border-radius: 2px; background: var(--primary); margin-right: 9px; vertical-align: -2px; }
+.tf .wrap th, .emp .et thead th { letter-spacing: .02em; }
+.pie { border-radius: 12px; }
+.tf .chip { border-radius: 8px; }
+.tf .fld input, .gate input { border-radius: 8px; }
+.tf .clr { border-radius: 8px; }
+footer { color: #a3a8b8; }
+
+/* 비밀번호 화면 */
+.gate { background: linear-gradient(120deg, #0a1330 0%, #14224f 55%, #2a2f86 100%); }
+.gate form { border: 0; border-radius: 16px; box-shadow: 0 30px 70px -20px rgba(0,0,0,.55); }
+.gate .btn { background: var(--primary); color: #fff; }
 </style>
 </head>
 <body>
@@ -330,8 +390,8 @@ const EMPTY_GROUPS = [["DC", [["GP20", "20'"], ["GP40", "40'"], ["HQ40", "4H"]]]
 const EMPTY_TERMINALS = ["신선대", "감만", "광양서부", "광양국제", "E1CT", "한진신항", "선광신항", "PCTC", "GCT"];
 const WD = ["일", "월", "화", "수", "목", "금", "토"];
 const C = {
-  text: "#0b0f19", muted: "#8a8f98", card: "#ffffff", primary: "#2f6fed", rowAlt: "#eff1f6",
-  gridMajor: "#ccd2dc", gridMinor: "#edf0f5", now: "#ef4444", sat: "#2f6fed", sun: "#e8474c",
+  text: "#101426", muted: "#858b9a", card: "#ffffff", primary: "#3f3cbb", rowAlt: "#f1f2f7",
+  gridMajor: "#ccd2dc", gridMinor: "#edf0f5", now: "#ef4444", sat: "#3f3cbb", sun: "#e8474c",
   tableLine: "#dfe3ea", border: "#edeef2", track: "#e4e8f0",
 };
 
