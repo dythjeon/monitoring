@@ -143,6 +143,12 @@ table.et tfoot td.tot { color: var(--primary); font-size: 16px; }
 .ty-map .stamp { position: absolute; right: 10px; top: 10px; font-size: 11px; color: var(--muted); background: rgba(255,255,255,.85); border-radius: 8px; padding: 4px 8px; }
 .ty-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; max-height: var(--mapH, none); overflow: auto; padding-right: 2px; }
 .ty-side h2 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.ty-toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--card); color: var(--muted); border-radius: 999px; padding: 4px 10px 4px 6px; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.ty-toggle i { width: 22px; height: 12px; border-radius: 999px; background: var(--track); position: relative; transition: background .15s; }
+.ty-toggle i::after { content: ""; position: absolute; left: 1px; top: 1px; width: 10px; height: 10px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s; }
+.ty-toggle.on { color: var(--primary); border-color: var(--primary); background: var(--primary-soft); }
+.ty-toggle.on i { background: var(--primary); }
+.ty-toggle.on i::after { transform: translateX(10px); }
 .ty-side .m { color: var(--muted); font-size: 11.5px; }
 .ty-quiet { background: var(--bg); border-radius: 14px; padding: 18px 16px; text-align: center; }
 .ty-quiet .big { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
@@ -701,14 +707,24 @@ function tyAge(s) {
   return h < 1 ? "방금" : h < 48 ? `${Math.round(h)}시간 전` : `${Math.round(h / 24)}일 전`;
 }
 
+// 소멸한 태풍을 지도·목록에 보여줄지. 기본은 끔, 선택은 브라우저에 기억한다.
+let tyShowGone = false;
+try { tyShowGone = localStorage.getItem("tyShowGone") === "1"; } catch {}
 function renderTyphoon(pane) {
   pane.innerHTML = "";
   const T = S.typhoons || {};
-  const storms = T.storms || [];
+  const all = T.storms || [];
+  const goneN = all.filter(s => s.status !== "active").length;
+  const storms = tyShowGone ? all : all.filter(s => s.status === "active");
   const wrap = document.createElement("div"); wrap.className = "ty"; pane.appendChild(wrap);
   const mapBox = document.createElement("div"); mapBox.className = "ty-map"; wrap.appendChild(mapBox);
   const side = document.createElement("div"); side.className = "ty-side"; wrap.appendChild(side);
-  side.innerHTML = tySideHTML(T, storms);
+  side.innerHTML = tySideHTML(T, storms, goneN);
+  side.querySelector(".ty-toggle").onclick = () => {
+    tyShowGone = !tyShowGone;
+    try { localStorage.setItem("tyShowGone", tyShowGone ? "1" : "0"); } catch {}
+    renderTyphoon(pane);
+  };
   drawTyMap(mapBox, storms, T);
   if (!COAST) loadCoast().then(c => { if (c && tab === "typhoon" && mapBox.isConnected) drawTyMap(mapBox, storms, T); });
 }
@@ -838,9 +854,10 @@ function tyTipHTML(s) {
   return h;
 }
 
-function tySideHTML(T, storms) {
+function tySideHTML(T, storms, goneN) {
   const active = storms.filter(s => s.status === "active"), recent = storms.filter(s => s.status !== "active");
-  let h = `<h2>태풍 모니터링 ${active.length ? `<span class="pill" style="background:${TY_CAT.TY[1]}">활동 ${active.length}</span>` : `<span class="pill ghost">활동 없음</span>`}</h2>
+  let h = `<h2>태풍 모니터링 ${active.length ? `<span class="pill" style="background:${TY_CAT.TY[1]}">활동 ${active.length}</span>` : `<span class="pill ghost">활동 없음</span>`}
+      <button type="button" class="ty-toggle${tyShowGone ? " on" : ""}" aria-pressed="${tyShowGone}" title="최근 10일 이내 소멸한 태풍을 지도와 목록에 표시"><i></i>소멸 조회${goneN ? ` ${goneN}` : ""}</button></h2>
     <div class="m">북서태평양 · 한국 · 일본 · 중국 · 러시아 극동 · 베트남 해역 · ${T.fetched_at ? "수집 " + T.fetched_at : "자료 없음"}</div>`;
   if (!active.length) {
     h += `<div class="ty-quiet"><div class="big">현재 활동 중인 태풍이 없습니다</div><div class="m">열대저압부·태풍이 발생하면 10분 이내에 지도와 목록에 자동 표시됩니다</div></div>`;
