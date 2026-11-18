@@ -702,18 +702,20 @@ function renderEmpty(pane) {
   for (const [, cols] of EMPTY_GROUPS) { cols.forEach(([k], i) => { h += val(cellTotal(k), gcls(i, cols.length)); }); h += `<td class="gap"></td>`; }
   h += val(totalAll, "tot") + `</tr></tfoot></table>`;
   h += `<div class="note">RF(냉동)는 광양서부·선광신항·PCTC·GCT만 타입별 재고를 제공합니다 · 신선대/감만의 FR은 플랫랙 · E1CT/한진신항은 GP/HQ만 제공 · PCTC/GCT는 Damage 제외(Sound만) · 선광신항/광양국제는 반출 가능 개수</div>`;
-  // 터미널별 비중
+  // 터미널별 비중: 재고가 많은(비중이 높은) 터미널부터. 표는 터미널 고정 순서 그대로 둔다.
+  const tot = (c, t) => (get(c, t) || {}).total || 0;
+  const ranked = rows.slice().sort((a, b) => tot(...b) - tot(...a));
   h += `<div class="share"><div class="lb">터미널별 비중</div><div class="bar">`;
-  for (const [c, t] of rows) { const v = (get(c, t) || {}).total || 0; if (v) h += `<i style="flex:${v};background:${rowColor[t]}"></i>`; }
+  for (const [c, t] of ranked) { const v = (get(c, t) || {}).total || 0; if (v) h += `<i style="flex:${v};background:${rowColor[t]}"></i>`; }
   h += `</div><div class="lg">`;
-  for (const [c, t] of rows) { const v = (get(c, t) || {}).total || 0; const p = totalAll ? Math.round(v / totalAll * 100) : 0;
+  for (const [c, t] of ranked) { const v = (get(c, t) || {}).total || 0; const p = totalAll ? Math.round(v / totalAll * 100) : 0;
     h += `<span><i style="background:${rowColor[t]}"></i>${t}<span class="c">${fmtN(v)}개 · ${p}%</span></span>`; }
   h += `</div></div>`;
   // 원그래프 2개: 터미널별(막대와 같은 색) · 규격별
   const sumK = (...ks) => ks.reduce((s, k) => s + cellTotal(k), 0);
   const sizeItems = [["20' DC", sumK("GP20"), "#475569"], ["40' DC", sumK("GP40"), "#e64980"], ["40' HC", sumK("HQ40"), "#94a3b8"]];
   sizeItems.push(["특수(OT·FR·RF)", Math.max(0, totalAll - sizeItems.reduce((s, x) => s + x[1], 0)), "#d9dee6"]);
-  h += `<div class="pies">` + donutHTML("터미널별 비중", rows.map(([c, t]) => [t, (get(c, t) || {}).total || 0, rowColor[t]]))
+  h += `<div class="pies">` + donutHTML("터미널별 비중", ranked.map(([c, t]) => [t, (get(c, t) || {}).total || 0, rowColor[t]]))
      + donutHTML("규격별 비중", sizeItems) + `</div></div>`;
   pane.innerHTML = h;
   pane.querySelectorAll(".pie .seg").forEach(n => bindTip(n, n.dataset.tip));
