@@ -25,7 +25,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from scraper import (SOURCES, fetch_all, fetch_bptc_work_status, fetch_bptc_empty_status,
+from scraper import (SOURCES, fetch_all, fetch_bptc_work_status, fetch_hjit_work_status, fetch_bptc_empty_status,
                      fetch_gwct_empty_status, fetch_e1ct_empty_status, fetch_hjit_empty_status,
                      lane_of, LANE_COUNTRY, LANE_BY_BOUND)
 import re
@@ -106,6 +106,10 @@ def collect():
     except Exception as e:
         work = []
         errors = list(errors) + [f"본선작업현황: {e}"]
+    try:
+        work = list(work) + fetch_hjit_work_status()
+    except Exception as e:
+        errors = list(errors) + [f"본선작업현황(한진신항): {e}"]
     empty = []
     for label, fn in (("국내공컨현황", fetch_bptc_empty_status),
                       ("국내공컨현황(광양서부)", fetch_gwct_empty_status),

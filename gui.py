@@ -16,7 +16,7 @@ from matplotlib.lines import Line2D
 from matplotlib.transforms import blended_transform_factory, offset_copy
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-from scraper import (fetch_all, fetch_bptc_work_status, fetch_bptc_empty_status,
+from scraper import (fetch_all, fetch_bptc_work_status, fetch_hjit_work_status, fetch_bptc_empty_status,
                      fetch_gwct_empty_status, fetch_e1ct_empty_status, fetch_hjit_empty_status,
                      lane_of as vessel_lane, LANE_COUNTRY, LANE_BY_BOUND)
 from assets import LOGO_PNG_B64
@@ -957,6 +957,10 @@ class BerthMonitorApp:
             data, errors, stats = [], [str(e)], []
         try:
             work_data = fetch_bptc_work_status()
+            try:
+                work_data = list(work_data) + fetch_hjit_work_status()
+            except Exception:
+                pass   # 한진신항 작업현황 실패해도 BPTC 는 표시
         except Exception as e:
             work_data = []
             errors = list(errors) + [f"본선작업현황: {e}"]

@@ -229,99 +229,124 @@ HJIT_EXTRA_CODES = ("IQH", "IHP")
 HJIT_PAGE_LIMIT = 20   # 페이지 루프 안전장치. Total 파싱이 틀려도 여기서 멈춘다.
 
 
-def fetch_hjit(period_days=14, base_date=None):
-    """HJIT(한진인천컨테이너터미널) 선석현황을 가져온다.
+HJIT_BASE = "https://esvc2.hjit.co.kr"
+HJIT_STATUS_PAGE = f"{HJIT_BASE}/HJIT/esvc/vessel/vesselStatus"
 
-    period_days: 조회 기간(일)
-    base_date: 'YYYY-MM-DD' 기준일. None이면 오늘 날짜 사용.
-    이 페이지도 선사코드 필드에 DYS 대신 컨소시엄/파트너 코드(IQH, IHP)가
-    찍히는 경우가 있어, 서버 필터 없이 전체 선사를 받아 _is_tracked()로
-    클라이언트에서 걸러낸다.
-    반환: [{terminal, berth, voyage, ship_name, line, eta, etd}, ...]
-    """
-    base = "http://59.17.254.10:9130/esvc"
-    get_url = f"{base}/berth/BerthAction.do?cmd=BerthScheduleList&menuID=01&subMenuID=1&pgID=01"
-    post_url = f"{base}/berth/BerthAction.do"
 
+def _hjit_session():
+    """새 HJIT e-서비스는 세션 쿠키 + CSRF 토큰(메타태그)이 있어야 JSON API 를 준다."""
     session = requests.Session()
     session.headers.update(HEADERS)
+    resp = session.get(HJIT_STATUS_PAGE, timeout=20)
+    if resp.status_code >= 500:
+        raise RuntimeError(f"터미널 서버 장애(HTTP {resp.status_code}) - 한진인천 e-서비스가 응답하지 않습니다")
+    resp.raise_for_status()
+    m = re.search(r'name="_csrf"\s+content="([^"]+)"', resp.text)
+    if not m:
+        raise RuntimeError("한진인천 e-서비스 CSRF 토큰을 찾지 못했습니다(페이지 구조 변경?)")
+    hm = re.search(r'name="_csrf_header"\s+content="([^"]+)"', resp.text)
+    session.headers.update({
+        (hm.group(1) if hm else "X-CSRF-TOKEN"): m.group(1),
+        "Referer": HJIT_STATUS_PAGE,
+        "X-Requested-With": "XMLHttpRequest",
+    })
+    return session
 
-    # JSESSIONID 쿠키 확보. 이 서버는 뒤쪽 WAS가 죽어 있으면 WebLogic 브리지가
-    # 10초를 기다린 뒤 503을 돌려준다. 예전엔 여기서 상태를 안 보고 POST까지
-    # 시도해 같은 10초를 한 번 더 기다렸다(총 24초). 503이면 바로 실패 처리한다.
-    first_resp = session.get(get_url, timeout=15)
-    if first_resp.status_code >= 500:
-        raise RuntimeError(
-            f"터미널 서버 장애(HTTP {first_resp.status_code}) - 한진인천 선석조회 시스템이 응답하지 않습니다")
 
+def _hjit_schedule(session, from_day, to_day):
+    """/HJIT/berth/vesselSchedule : 기간 내 모든 본선(선사코드 carrier 포함)."""
+    now = datetime.now()
     body = {
-        "cmd": "BerthScheduleList",
-        "smode": "",
-        "nowPage": "1",   # _load_page()가 페이지마다 덮어쓴다
-        "scPeriod": str(period_days),
-        "val1": "",
-        "menuID": "01",
-        "subMenuID": "1",
-        "pgID": "01",
-        "scBaseDate": base_date or datetime.now().strftime("%Y-%m-%d"),
-        "theCode": "",
-        "theSeq": "",
-        "theYear": "",
-        "thePtnr": "",
-        "theLane": "",
+        "fromDate": (now + timedelta(days=from_day)).strftime("%Y%m%d"),
+        "toDate": (now + timedelta(days=to_day)).strftime("%Y%m%d"),
+        "statusCodes": ["A", "B", "W", "D", "P"],
     }
-    def _load_page(page):
-        body["nowPage"] = str(page)
-        resp = session.post(post_url, data=body, headers={"Referer": get_url}, timeout=15)
-        resp.raise_for_status()
-        resp.encoding = resp.apparent_encoding or "utf-8"
-        return BeautifulSoup(resp.text, "html.parser")
+    resp = session.post(f"{HJIT_BASE}/HJIT/berth/vesselSchedule", json=body, timeout=20)
+    resp.raise_for_status()
+    return resp.json().get("vesselSchedules") or []
 
-    def _parse_page(soup):
-        # 직계 자식 td만 본다. 이 페이지는 표가 여러 겹으로 중첩돼 있어서
-        # recursive 검색(기본값)을 쓰면 바깥쪽 tr이 안쪽 표의 td를 통째로
-        # 주워와 cells[:12]가 첫 행이 되고, 결국 첫 행이 4번씩 중복된다.
-        out = []
-        for tr in soup.find_all("tr"):
-            tds = tr.find_all("td", class_="ta2", recursive=False)
-            if len(tds) < 12:
-                continue
-            out.append([td.get_text(strip=True) for td in tds])
-        return out
 
-    # 이 페이지는 한 번에 10건씩만 준다(Total:60이면 6페이지). 예전엔 1페이지만
-    # 읽어서 사흘치만 보였고, 그 뒤에 있는 우리 선박(PEGASUS TERA/PETA/HOPE,
-    # SM TOKYO 등)이 통째로 누락됐다. 한진신항이 늘 0건이던 원인이었다.
-    first = _load_page(1)
-    cells_all = _parse_page(first)
-    per_page = len(cells_all)
-    m = re.search(r"Total\s*:\s*([\d,]+)", first.get_text(" ", strip=True))
-    total = int(m.group(1).replace(",", "")) if m else 0
-    if per_page and total > per_page:
-        last_page = min(-(-total // per_page), HJIT_PAGE_LIMIT)
-        for page in range(2, last_page + 1):
-            page_cells = _parse_page(_load_page(page))
-            if not page_cells:      # 빈 페이지가 나오면 더 볼 것이 없다
-                break
-            cells_all.extend(page_cells)
+def _hjit_tracked(v):
+    # carrier 가 DYS 이거나, 컨소시엄 항로(serviceLane) 코드가 IQH/IHP 이거나, 편성표 선명
+    return _is_tracked(v.get("carrier"), v.get("vesselName"), extra_codes=HJIT_EXTRA_CODES) \
+        or (v.get("serviceLane") or "").strip().upper() in HJIT_EXTRA_CODES
 
+
+def _hjit_voyage(v):
+    inv, outv = (v.get("inVoyage") or "").strip(), (v.get("outVoyage") or "").strip()
+    code = f"{v.get('vesselCode') or ''}{v.get('voyageSeq') or ''}"
+    return f"{code} {inv}/{outv}".strip() if (inv or outv) else code
+
+
+def fetch_hjit(period_days=14, base_date=None):
+    """HJIT(한진인천컨테이너터미널) 선석배정현황.
+
+    2026-11 부터 e-서비스가 esvc2.hjit.co.kr 로 바뀌었다(옛 59.17.254.10:9130 은 503).
+    새 사이트는 선석배정 페이지(berthScheduleG)가 쓰는 JSON API 를 그대로 호출한다.
+    선사코드(carrier)가 들어 있어 DYS 를 바로 거를 수 있고, 컨소시엄 항로(IQH/IHP)도 본다.
+    반환: [{source, region, terminal, berth, voyage, ship_name, line, route, eta, etd}, ...]
+    """
+    session = _hjit_session()
     rows = []
-    for cells in cells_all:
-        voyage, ship_name, line, _in_voy, _out_voy, _cct, etb_atb, etd_atd, _dis, _load, _tp, berth = cells[:12]
-        berth = berth.split("(")[0].strip()
-        if not _is_tracked(line, ship_name, extra_codes=HJIT_EXTRA_CODES):
+    for v in _hjit_schedule(session, -1, period_days):
+        if not _hjit_tracked(v):
             continue
         rows.append({
             "source": "HJIT",
             "region": "인천",
             "terminal": "한진신항",
-            "berth": berth,
-            "voyage": voyage,
-            "ship_name": ship_name,
-            "line": line,
-            "route": "",  # HJIT 선석현황 페이지에는 항로 코드가 없음
-            "eta": _parse_dt(etb_atb),
-            "etd": _parse_dt(etd_atd),
+            "berth": (v.get("berthNo") or "").strip(),
+            "voyage": _hjit_voyage(v),
+            "ship_name": (v.get("vesselName") or "").strip(),
+            "line": (v.get("carrier") or "").strip(),
+            "route": (v.get("serviceLane") or "").strip(),
+            "eta": _parse_dt(v.get("atb") or v.get("etb")),
+            "etd": _parse_dt(v.get("atd") or v.get("etd")),
+        })
+    return rows
+
+
+def fetch_hjit_work_status():
+    """HJIT 본선작업현황(선석별 양적하 진행률).
+
+    vesselStatus 화면과 같은 계산: /HJIT/document/vesselContainer 로 컨테이너 목록을 받아
+    QC 번호가 있는 건만 세고, psituation C(완료)/P(계획) 로 나눠 진행률 = 완료/(완료+계획).
+    접안 중(Working/Berthed)인 추적 선박만. 반환 형식은 fetch_bptc_work_status 와 같다.
+    """
+    session = _hjit_session()
+    rows = []
+    for v in _hjit_schedule(session, -1, 0):
+        if v.get("status") not in ("Working", "Berthed") or not _hjit_tracked(v):
+            continue
+        voyage = f"{v.get('voyageSeq')}/{v.get('voyageYear')}"
+        cd = cl = pd = pl = 0
+        try:
+            resp = session.post(f"{HJIT_BASE}/HJIT/document/vesselContainer",
+                                json={"vessel": v.get("vesselCode"), "voyage": voyage, "inOutCodes": ["D", "L"]},
+                                timeout=30)
+            resp.raise_for_status()
+            for c in resp.json().get("containers") or []:
+                if not (c.get("craneNo") or "").strip():
+                    continue                      # QC 미배정은 화면에서도 제외
+                done = c.get("psituation") == "C"
+                if c.get("disLoad") == "D":
+                    cd += done; pd += (not done)
+                else:
+                    cl += done; pl += (not done)
+        except Exception:
+            pass                                  # 물량 조회 실패해도 선박은 0% 로 표시
+        total = cd + cl + pd + pl
+        rows.append({
+            "terminal": "한진신항",
+            "berth": (v.get("berthNo") or "").strip(),
+            "voyage": _hjit_voyage(v),
+            "ship_name": (v.get("vesselName") or "").strip(),
+            "line": (v.get("carrier") or "").strip(),
+            "eta": _parse_dt(v.get("atb") or v.get("etb")),
+            "etd": _parse_dt(v.get("atd") or v.get("etd")),
+            "progress": int(round((cd + cl) / total * 100)) if total else 0,
+            "discharge": f"{cd}/{cd + pd}" if total else str(v.get("dischargeQty") or ""),
+            "load": f"{cl}/{cl + pl}" if total else str(v.get("loadQty") or ""),
         })
     return rows
 
