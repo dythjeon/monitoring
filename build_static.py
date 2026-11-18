@@ -33,7 +33,7 @@ def main():
         "fetching": False,
         "data": rows, "work": work, "empty": empty,
         "errors": errors, "stats": stats, "typhoons": typhoons,
-        "refresh_sec": int(os.environ.get("BERTH_STATIC_REFRESH_SEC", "300")),   # 아티팩트 재게시 주기(5분)
+        "refresh_sec": int(os.environ.get("BERTH_STATIC_REFRESH_SEC", "1800")),   # 아티팩트 재게시 주기(30분)
         "server_now": now.strftime("%Y-%m-%dT%H:%M:%S"),
         "sources": [name for name, _fn in SOURCES],
         "static": True,
