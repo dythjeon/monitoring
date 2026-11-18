@@ -112,13 +112,13 @@ table.et tfoot td.gr { border-bottom-right-radius: 12px; border-bottom: 1px soli
 table.et tfoot td.gc { border-bottom: 1px solid var(--table-line); }
 table.et thead tr:last-child th.gc { border-bottom: 1px solid var(--table-line); }
 table.et td.lb, table.et th.lb { text-align: left; }
-.pies { display: flex; flex-wrap: wrap; gap: 18px 56px; padding: 26px 12px 4px; }
-.pie { display: flex; align-items: center; gap: 22px; min-width: 300px; }
-.pie svg { flex: none; width: 168px; height: 168px; }
-.pie svg path, .pie svg circle.seg { stroke: var(--card); stroke-width: 2; transition: opacity .12s; }
+.pies { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 22px 16px; padding: 30px 12px 6px; }
+.pie { display: flex; align-items: center; justify-content: center; gap: 40px; padding: 18px 20px; background: var(--bg); border-radius: 16px; }
+.pie svg { flex: none; width: 210px; height: 210px; }
+.pie svg path, .pie svg circle.seg { stroke: var(--bg); stroke-width: 2; transition: opacity .12s; }
 .pie svg:hover .seg { opacity: .55; } .pie svg .seg:hover { opacity: 1; }
-.pie .lb { font-size: 12px; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
-.pie .lg { display: grid; grid-template-columns: auto auto auto; gap: 6px 14px; font-size: 12.5px; align-items: center; }
+.pie .lb { font-size: 13px; color: var(--muted); font-weight: 700; margin-bottom: 12px; }
+.pie .lg { display: grid; grid-template-columns: auto auto auto; gap: 8px 22px; font-size: 13.5px; align-items: center; }
 .pie .lg i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; }
 .pie .lg .n { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
 .pie .lg .p { font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
@@ -302,7 +302,7 @@ const EMPTY_GROUPS = [["DC", [["GP20", "20'"], ["GP40", "40'"], ["HQ40", "4H"]]]
                       ["OT", [["OT20", "20'"], ["OT40", "40'"]]],
                       ["FR", [["FL20", "20'"], ["FL40", "40'"]]],
                       ["RF", [["RF20", "20'"], ["RH40", "4H"]]]];   // RF 는 광양서부만 제공. 냉동은 40' 일반이 없고 40'HC 뿐
-const EMPTY_TERMINALS = ["신선대", "감만", "광양서부", "E1CT", "한진신항", "PCTC", "GCT"];
+const EMPTY_TERMINALS = ["신선대", "감만", "광양서부", "E1CT", "한진신항", "선광신항", "PCTC", "GCT"];
 const WD = ["일", "월", "화", "수", "목", "금", "토"];
 const C = {
   text: "#0b0f19", muted: "#8a8f98", card: "#ffffff", primary: "#2f6fed", rowAlt: "#eff1f6",
@@ -495,7 +495,7 @@ function renderGantt(pane, key) {
     if (!upcoming[d.terminal] || d.eta < upcoming[d.terminal].eta) upcoming[d.terminal] = d;
   }
   const picks = Object.values(upcoming).sort((a, b) => a.eta - b.eta);
-  const FOOT = picks.length ? 22 : 0;
+  const FOOT = 22 + (picks.length ? 20 : 0);      // 맨 아래 안내 문구 한 줄 + (있으면) 구간 밖 입항 한 줄
   const top = HOUR_ROW + 6, bottom = H - DATE_ROW - FOOT;
   const units = Math.max(totalUnits, MIN_ROWS);
   const unitH = Math.max(34, Math.min(80, (bottom - top) / units));
@@ -622,8 +622,12 @@ function renderGantt(pane, key) {
   if (picks.length) {
     const parts = picks.slice(0, 2).map(d => `${d.terminal} ${d.eta.getMonth() + 1}/${d.eta.getDate()} ${d.ship_name}`);
     if (picks.length > 2) parts.push(`외 ${picks.length - 2}곳`);
-    svg.appendChild(el("text", { x: right, y: svgH - 6, "text-anchor": "end", "font-size": 12, fill: C.muted }, "구간 밖 다음 입항  ·  " + parts.join("  ·  ")));
+    svg.appendChild(el("text", { x: right, y: svgH - 27, "text-anchor": "end", "font-size": 12, fill: C.muted }, "구간 밖 다음 입항  ·  " + parts.join("  ·  ")));
   }
+
+  const note = W < 900 ? "막대 길이 = 작업시간 · 좁은 막대는 선명이 줄여 표시됩니다"
+    : "막대 길이는 작업시간에 비례합니다 · 작업시간이 짧아 막대가 좁으면 선명이 ‘…’로 줄어 보이며, 막대에 마우스를 올리면 전체 선명·항차·작업시간을 볼 수 있습니다";
+  svg.appendChild(el("text", { x: right, y: svgH - 7, "text-anchor": "end", "font-size": 11.5, fill: C.muted }, note));
 
   pane.appendChild(svg);
   if (!usable.length && S.updated_at) {
@@ -696,7 +700,7 @@ function renderEmpty(pane) {
   h += `</tbody><tfoot><tr><td class="lb">합계</td>`;
   for (const [, cols] of EMPTY_GROUPS) { cols.forEach(([k], i) => { h += val(cellTotal(k), gcls(i, cols.length)); }); h += `<td class="gap"></td>`; }
   h += val(totalAll, "tot") + `</tr></tfoot></table>`;
-  h += `<div class="note">RF(냉동)는 광양서부·PCTC·GCT만 타입별 재고를 제공합니다 · 신선대/감만의 FR은 플랫랙 · E1CT/한진신항은 GP/HQ만 제공 · PCTC/GCT는 Damage 제외(Sound만)</div>`;
+  h += `<div class="note">RF(냉동)는 광양서부·선광신항·PCTC·GCT만 타입별 재고를 제공합니다 · 신선대/감만의 FR은 플랫랙 · E1CT/한진신항은 GP/HQ만 제공 · PCTC/GCT는 Damage 제외(Sound만) · 선광신항은 반출 가능 개수</div>`;
   // 터미널별 비중
   h += `<div class="share"><div class="lb">터미널별 비중</div><div class="bar">`;
   for (const [c, t] of rows) { const v = (get(c, t) || {}).total || 0; if (v) h += `<i style="flex:${v};background:${rowColor[t]}"></i>`; }

@@ -483,64 +483,81 @@ def fetch_gwct_empty_status(carrier_code="DYS"):
     }]
 
 
-def fetch_snct(line_code="KHP"):
-    """SNCT(선광신컨테이너터미널) 선석배정현황(그래픽)을 가져온다.
+SNCT_BASE = "https://snct.sun-kwang.co.kr/infoservice/webpage"
 
-    SNCT는 선사코드가 아니라 항로(Route) 코드로 구분되어 있어,
-    DYS 선사가 속한 항로코드 'KHP'로 걸러낸다.
-    조회 화면이 한 번에 7일 단위로만 보여줘서 이번 주/다음 주 두 번 요청해 합친다.
-    반환: [{terminal, berth, voyage, ship_name, line, eta, etd}, ...]
+
+def fetch_snct(line_code="KHP", days=21):
+    """SNCT(선광신컨테이너터미널) 선석배정현황(텍스트)에서 항로(ROUTE)가 line_code 인 모선만.
+
+    SNCT 는 선사코드가 아니라 항로 코드로 구분한다. 텍스트 화면은 기간과 항로를 서버에서 걸러 주므로
+    (그래픽 화면은 7일씩만 보여줬다) 한 번에 3주치를 받는다.
+    열: NO|선석|모선항차(+입/출항차)|년도|항로|선박명(+Bitt)|접안(예정)|반입시작|반입마감|출항(예정)|선사|양하|적하|Shift
     """
-    url = "https://snct.sun-kwang.co.kr/infoservice/webpage/vessel/vslScheduleChart.jsp"
-
+    url = f"{SNCT_BASE}/vessel/vslScheduleText.jsp"
     today = datetime.now()
-    query_dates = [today.strftime("%Y-%m-%d"),
-                   (today + timedelta(days=7)).strftime("%Y-%m-%d")]
-
-    rows = []
-    seen = set()
-    for qdate in query_dates:
-        resp = requests.get(url, params={"isSearch": "Y", "queryDate": qdate},
+    rows, seen = [], set()
+    for page in range(1, 6):
+        resp = requests.post(url, data={"isSearch": "Y", "page": str(page), "ROUTE": line_code,
+                                        "strdStDate": (today - timedelta(days=1)).strftime("%Y-%m-%d"),
+                                        "strdEdDate": (today + timedelta(days=days)).strftime("%Y-%m-%d")},
                              headers=HEADERS, timeout=15)
         resp.raise_for_status()
-        resp.encoding = resp.apparent_encoding or "utf-8"
+        resp.encoding = "euc-kr"
         soup = BeautifulSoup(resp.text, "html.parser")
-
-        for info in soup.select("div[id^='vsl_info_']"):
-            fields = {}
-            for tr in info.select("table.vsl_info tr"):
-                tds = tr.find_all("td")
-                if len(tds) == 2:
-                    fields[tds[0].get_text(strip=True)] = tds[1].get_text(strip=True)
-
-            route = fields.get("Route", "")
-            ship_name = fields.get("Name of Vessel", "")
-            if not (route == line_code or _is_tracked(route, ship_name)):
+        added = 0
+        for tr in soup.find_all("tr"):
+            tds = tr.find_all("td", recursive=False)
+            if len(tds) < 11:
                 continue
-
-            voyage = fields.get("In / Out Voyage", "")
-            berth = fields.get("Berth No / (P/S)", "").split("/")[0].strip()
-            eta = _parse_dt(fields.get("Estimated Time of Berth", ""))
-            etd = _parse_dt(fields.get("Estimated Time of Departure", ""))
-
+            parts = [list(td.stripped_strings) for td in tds]
+            first = lambda i: parts[i][0] if parts[i] else ""
+            route = first(4)
+            if route != line_code:
+                continue
+            eta = _parse_dt(first(6).strip("()"))
+            etd = _parse_dt(first(9).strip("()"))
+            if not eta or not etd:
+                continue
+            ship_name = first(5)
+            voyage = parts[2][1] if len(parts[2]) > 1 else first(2)      # 입/출항차(2616N/2617S). 없으면 모선항차
             key = (ship_name, voyage, eta, etd)
             if key in seen:
                 continue
             seen.add(key)
-
+            added += 1
             rows.append({
-                "source": "SNCT",
-                "region": "인천",
-                "terminal": "선광신항",
-                "berth": berth,
-                "voyage": voyage,
-                "ship_name": ship_name,
-                "line": route,
-                "route": route,
-                "eta": eta,
-                "etd": etd,
+                "source": "SNCT", "region": "인천", "terminal": "선광신항",
+                "berth": first(1).split("(")[0].strip(),
+                "voyage": voyage, "ship_name": ship_name,
+                "line": first(10), "route": route, "eta": eta, "etd": etd,
             })
+        if not added:          # 페이지가 더 없거나 같은 내용이 반복되면 끝
+            break
     return rows
+
+
+def fetch_snct_empty_status(carrier_code="DYS"):
+    """SNCT 첫 화면의 'Empty 반출 가능 개수' 표에서 Operator 가 carrier_code 인 행.
+    열: Operator | DRY 20,40,40H,45 | RF 20,40 | FR 20,40 | OT 20,40 | TK 20,40   (Damage 구분은 없다)"""
+    resp = requests.get(f"{SNCT_BASE}/main/_fetchEmptyData_new.jsp", headers=HEADERS, timeout=15)
+    resp.raise_for_status()
+    resp.encoding = "utf-8"
+    keys = ("GP20", "GP40", "HQ40", "HQ45", "RF20", "RH40", "FL20", "FL40", "OT20", "OT40", "TK20", "TK40")
+    soup = BeautifulSoup("<table>" + resp.text + "</table>", "html.parser")
+    found = False
+    for tr in soup.find_all("tr"):
+        cells = [td.get_text(strip=True) for td in tr.find_all("td")]
+        if len(cells) < 13:
+            continue
+        found = True
+        if cells[0].upper() != carrier_code.upper():
+            continue
+        counts = {k: (int(c.replace(",", "")) if c.replace(",", "").isdigit() else 0) for k, c in zip(keys, cells[1:13])}
+        return [{"carrier": carrier_code.upper(), "terminal": "선광신항", "counts": counts, "total": sum(counts.values())}]
+    if not found:
+        raise ValueError("SNCT Empty 표를 읽지 못했습니다")
+    return [{"carrier": carrier_code.upper(), "terminal": "선광신항",          # 표는 있는데 우리 선사 행이 없으면 재고 0
+             "counts": {"GP20": 0, "GP40": 0, "HQ40": 0}, "total": 0}]
 
 
 # --------------------------------------------------------------------------
