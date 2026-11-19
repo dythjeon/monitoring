@@ -401,19 +401,29 @@ footer { color: #a3a8b8; }
 .pies { grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); }
 .tip { max-width: min(360px, calc(100vw - 16px)); }
 
-@media (min-width: 1101px) {            /* PC: Empty Stock 을 한 화면에 — 표 왼쪽, 원그래프 오른쪽 */
-  .emp-body { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 18px; align-items: start; }
+@media (min-width: 1101px) {            /* PC: Empty Stock 배치(표 → 막대 → 원그래프)는 그대로 두고 조금씩만 줄여 한 화면에 */
   .emp .head { margin-bottom: 10px; }
-  .emp-l .share { display: none; }      /* 오른쪽 '터미널별 비중' 원그래프와 같은 내용 */
-  table.et th, table.et td { padding: 6px 10px; }
-  table.et th.g { padding: 6px 0 4px; }
-  table.et tfoot td { padding-top: 8px; padding-bottom: 8px; }
-  .emp .note { padding-top: 8px; line-height: 1.5; }
-  .emp-r .pies { grid-template-columns: 1fr; gap: 12px; padding: 0; }
-  .emp-r .pie { justify-content: flex-start; gap: 18px; padding: 12px 16px; }
-  .emp-r .pie svg { width: 128px; height: 128px; }
-  .emp-r .pie .lb { margin-bottom: 7px; font-size: 12px; }
-  .emp-r .pie .lg { gap: 3px 12px; font-size: 12.5px; }
+  table.et th, table.et td { padding: 7px 12px; }
+  table.et th.g { padding: 6px 0 5px; }
+  table.et tfoot td { padding-top: 9px; padding-bottom: 9px; }
+  .emp .note { padding-top: 8px; }
+  .share { padding-top: 14px; }
+  .share .lb { margin-bottom: 6px; }
+  .share .lg { margin-top: 8px; }
+  .pies { padding-top: 16px; gap: 14px 16px; }
+  .pie { padding: 12px 20px; gap: 34px; }
+  .pie svg { width: 150px; height: 150px; }
+  .pie .lb { margin-bottom: 8px; }
+  .pie .lg { gap: 3px 22px; font-size: 12.5px; }
+}
+@media (min-width: 1101px) and (max-height: 1180px) {       /* 화면이 낮으면 한 단계 더 */
+  table.et th, table.et td { padding: 5px 12px; }
+  table.et tfoot td { padding-top: 7px; padding-bottom: 7px; }
+  .share { padding-top: 10px; }
+  .pies { padding-top: 12px; }
+  .pie { padding: 10px 20px; }
+  .pie svg { width: 124px; height: 124px; }
+  .pie .lg { gap: 1px 22px; font-size: 12px; }
 }
 
 @media (max-width: 1100px) {            /* 태블릿·작은 노트북 */
