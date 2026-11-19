@@ -1463,13 +1463,15 @@ function suRender(j, type, pol, pod) {
 
 // ===================== 태풍 모니터링 =====================
 // 지도는 외부 타일 없이 coast.json(Natural Earth 50m 해안선)을 직접 그린다.
-const TY_VIEW = { lon0: 98, lon1: 162, lat0: 2, lat1: 52 };      // 베트남 ~ 러시아 극동 ~ 서태평양
+// 위쪽은 블라디보스토크·브랑겔베이(북위 43도)까지만 보이면 되므로 46도에서 자른다(그만큼 지도가 커진다). 아래 동남아는 그대로.
+const TY_VIEW = { lon0: 98, lon1: 162, lat0: 2.5, lat1: 45.8 };      // 베트남 ~ 블라디보스토크 ~ 서태평양
+const TY_LON_LIMIT = [91, 174];     // coast.json 이 가진 범위 안쪽. 화면이 옆으로 넓으면 여기까지 좌우를 더 보여준다
 const TY_YSCALE = 1.12;                                           // 중위도에서 모양이 덜 눌리게
 const TY_CAT = { TD: ["열대저압부", "#7c8aa5"], TS: ["열대폭풍", "#22a06b"], STS: ["강한 열대폭풍", "#d99a12"],
                  TY: ["태풍(중)", "#ef6a1f"], STY: ["태풍(강)", "#dc2f2f"], VTY: ["매우 강·초강력", "#8a2bd1"] };
 const TY_LABELS = [["한국", 127.6, 36.2], ["북한", 126.8, 39.8], ["일본", 139.2, 37.2], ["중국", 109.5, 33.5],
-                   ["러시아", 133.0, 47.5], ["베트남", 105.3, 19.0], ["대만", 121.0, 23.7], ["필리핀", 122.3, 12.3],
-                   ["몽골", 104.5, 46.5], ["태국", 101.0, 15.5], ["라오스", 103.2, 19.5], ["캄보디아", 105.0, 12.4],
+                   ["러시아", 135.8, 44.6], ["베트남", 105.3, 19.0], ["대만", 121.0, 23.7], ["필리핀", 122.3, 12.3],
+                   ["몽골", 105.5, 44.2], ["태국", 101.0, 15.5], ["라오스", 103.2, 19.5], ["캄보디아", 105.0, 12.4],
                    ["남중국해", 114.5, 15.0], ["동중국해", 125.5, 29.0],
                    ["동해", 134.5, 40.0], ["서해", 124.0, 36.5], ["필리핀해", 134.0, 17.5], ["태평양", 151.0, 30.0]];
 const TY_SEA = new Set(["남중국해", "동중국해", "동해", "서해", "필리핀해", "태평양"]);
@@ -1542,25 +1544,41 @@ function renderTyphoon(pane) {
 
 function drawTyMap(box, storms, T) {
   box.innerHTML = "";
-  const lonSpan = TY_VIEW.lon1 - TY_VIEW.lon0, latSpan = (TY_VIEW.lat1 - TY_VIEW.lat0) * TY_YSCALE;
+  let lon0 = TY_VIEW.lon0, lon1 = TY_VIEW.lon1;
+  let lonSpan = lon1 - lon0;
+  const latSpan = (TY_VIEW.lat1 - TY_VIEW.lat0) * TY_YSCALE;
   // 지도가 화면보다 커지면 카드가 늘어나 페이지 전체가 밀린다. 높이를 화면에 맞춰 제한하고
   // 폭은 비율대로 줄인다(남는 좌우 여백은 바다색이라 티가 안 난다).
   // 다른 탭과 카드 크기가 같아지게, 지도 아래 끝을 화면 아래(카드 여백 + 바닥글 자리 90px 위)에 맞춘다.
   const availH = Math.max(380, Math.min(innerHeight - (box.getBoundingClientRect().top + scrollY) - 90, 900));
   let W = Math.max(box.clientWidth || 0, 320), H = Math.round(W * latSpan / lonSpan);
-  if (H > availH) { H = availH; W = Math.round(H * lonSpan / latSpan); }
-  box.style.height = H + "px";
+  if (H > availH) {
+    // 높이에 맞추면 좌우가 남는다. 빈 바다색으로 두지 않고 그 폭만큼 경도 범위를 넓혀 지도를 채운다(태평양 쪽이 더 보인다).
+    H = availH;
+    const span = Math.min(W / (H / latSpan), TY_LON_LIMIT[1] - TY_LON_LIMIT[0]);
+    if (span > lonSpan) {
+      lon0 = Math.max(TY_LON_LIMIT[0], lon0 - (span - lonSpan) / 2);
+      lon1 = Math.min(TY_LON_LIMIT[1], lon0 + span);
+      lon0 = Math.max(TY_LON_LIMIT[0], lon1 - span);
+      lonSpan = lon1 - lon0;
+    }
+    W = Math.round(H * lonSpan / latSpan);
+  }
+  // 휴대폰처럼 지도가 낮게 나오면 범례가 지도를 가린다: 범례 자리(62px)만큼만 아래에 띠를 두고, 그 이상 빈 곳은 만들지 않는다.
+  const legendPad = box.clientWidth < 600 ? 62 : 0;
+  box.style.minHeight = "0";
+  box.style.height = (H + legendPad) + "px";
   box.parentElement && box.parentElement.style.setProperty("--mapH", H + "px");
   const k = W / lonSpan;
-  const X = (lon) => (lon - TY_VIEW.lon0) * k, Y = (lat) => (TY_VIEW.lat1 - lat) * k * TY_YSCALE;
+  const X = (lon) => (lon - lon0) * k, Y = (lat) => (TY_VIEW.lat1 - lat) * k * TY_YSCALE;
   const kmPx = (km) => km / 111 * k;
   const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", height: H });
   svg.appendChild(el("rect", { x: 0, y: 0, width: W, height: H, fill: "#d9e6f2" }));
 
   // 경위선
   const gr = el("g", { stroke: "#ffffff", "stroke-width": 1, "stroke-opacity": .7 });
-  for (let lon = 100; lon <= 160; lon += 10) gr.appendChild(el("line", { x1: X(lon), x2: X(lon), y1: 0, y2: H }));
-  for (let lat = 10; lat <= 50; lat += 10) gr.appendChild(el("line", { x1: 0, x2: W, y1: Y(lat), y2: Y(lat) }));
+  for (let lon = 100; lon <= 170; lon += 10) gr.appendChild(el("line", { x1: X(lon), x2: X(lon), y1: 0, y2: H }));
+  for (let lat = 10; lat <= 40; lat += 10) gr.appendChild(el("line", { x1: 0, x2: W, y1: Y(lat), y2: Y(lat) }));
   svg.appendChild(gr);
   // 육지
   if (COAST) {
@@ -1574,8 +1592,8 @@ function drawTyMap(box, storms, T) {
   } else {
     svg.appendChild(el("text", { x: W / 2, y: H / 2, "text-anchor": "middle", "font-size": 13, fill: C.muted }, "해안선 불러오는 중..."));
   }
-  for (let lon = 100; lon <= 160; lon += 10) svg.appendChild(el("text", { x: X(lon) + 3, y: H - 6, "font-size": 10, fill: "#7d8aa0" }, `${lon}°E`));
-  for (let lat = 10; lat <= 50; lat += 10) svg.appendChild(el("text", { x: 4, y: Y(lat) - 3, "font-size": 10, fill: "#7d8aa0" }, `${lat}°N`));
+  for (let lon = 100; lon <= 170; lon += 10) svg.appendChild(el("text", { x: X(lon) + 3, y: H - 6, "font-size": 10, fill: "#7d8aa0" }, `${lon}°E`));
+  for (let lat = 10; lat <= 40; lat += 10) svg.appendChild(el("text", { x: 4, y: Y(lat) - 3, "font-size": 10, fill: "#7d8aa0" }, `${lat}°N`));
   // 지명
   for (const [name, lon, lat] of TY_LABELS) {
     const sea = TY_SEA.has(name);
