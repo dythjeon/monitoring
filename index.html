@@ -389,6 +389,7 @@ footer { color: #a3a8b8; }
 .lp .loc button.main { font-weight: 700; }
 .lp .loc .none { padding: 30px 12px; text-align: center; color: var(--muted); font-size: 13px; }
 @media (max-width: 760px) {
+  .ty-map .stamp { top: auto; bottom: 70px; font-size: 10px; }      /* 위에 두면 블라디보스토크 글자를 가린다 → 오른쪽 아래 빈 바다로 */
   .su .fld.sm { flex-basis: 100%; }
   .lp { padding: 10px; }
   .lp .cols { grid-template-columns: 112px 1fr; }
@@ -1465,6 +1466,7 @@ function suRender(j, type, pol, pod) {
 // 지도는 외부 타일 없이 coast.json(Natural Earth 50m 해안선)을 직접 그린다.
 // 위쪽은 블라디보스토크·브랑겔베이(북위 43도)까지만 보이면 되므로 46도에서 자른다(그만큼 지도가 커진다). 아래 동남아는 그대로.
 const TY_VIEW = { lon0: 98, lon1: 162, lat0: 2.5, lat1: 45.8 };      // 베트남 ~ 블라디보스토크 ~ 서태평양
+const TY_MIN_LON_SPAN = 50;         // 세로로 자리가 남으면 동쪽을 줄여 확대하되, 98~148도(일본 전체)보다 좁히지는 않는다
 const TY_LON_LIMIT = [91, 174];     // coast.json 이 가진 범위 안쪽. 화면이 옆으로 넓으면 여기까지 좌우를 더 보여준다
 const TY_YSCALE = 1.12;                                           // 중위도에서 모양이 덜 눌리게
 const TY_CAT = { TD: ["열대저압부", "#7c8aa5"], TS: ["열대폭풍", "#22a06b"], STS: ["강한 열대폭풍", "#d99a12"],
@@ -1563,6 +1565,11 @@ function drawTyMap(box, storms, T) {
       lonSpan = lon1 - lon0;
     }
     W = Math.round(H * lonSpan / latSpan);
+  } else if (H < availH) {
+    // 반대로 폭에 맞췄더니 아래로 자리가 남는 경우(큰 모니터·휴대폰): 동쪽 태평양을 줄여 그만큼 지도를 키운다.
+    // 서쪽(방콕·람차방)은 그대로 두고, 동쪽은 일본이 다 들어오는 148도까지만 줄인다.
+    const span = Math.max(W / (availH / latSpan), TY_MIN_LON_SPAN);
+    if (span < lonSpan) { lon1 = lon0 + span; lonSpan = span; H = Math.round(W * latSpan / lonSpan); }
   }
   // 휴대폰처럼 지도가 낮게 나오면 범례가 지도를 가린다: 범례 자리(62px)만큼만 아래에 띠를 두고, 그 이상 빈 곳은 만들지 않는다.
   const legendPad = box.clientWidth < 600 ? 62 : 0;
