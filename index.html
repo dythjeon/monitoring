@@ -401,6 +401,21 @@ footer { color: #a3a8b8; }
 .pies { grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); }
 .tip { max-width: min(360px, calc(100vw - 16px)); }
 
+@media (min-width: 1101px) {            /* PC: Empty Stock 을 한 화면에 — 표 왼쪽, 원그래프 오른쪽 */
+  .emp-body { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 18px; align-items: start; }
+  .emp .head { margin-bottom: 10px; }
+  .emp-l .share { display: none; }      /* 오른쪽 '터미널별 비중' 원그래프와 같은 내용 */
+  table.et th, table.et td { padding: 6px 10px; }
+  table.et th.g { padding: 6px 0 4px; }
+  table.et tfoot td { padding-top: 8px; padding-bottom: 8px; }
+  .emp .note { padding-top: 8px; line-height: 1.5; }
+  .emp-r .pies { grid-template-columns: 1fr; gap: 12px; padding: 0; }
+  .emp-r .pie { justify-content: flex-start; gap: 18px; padding: 12px 16px; }
+  .emp-r .pie svg { width: 128px; height: 128px; }
+  .emp-r .pie .lb { margin-bottom: 7px; font-size: 12px; }
+  .emp-r .pie .lg { gap: 3px 12px; font-size: 12.5px; }
+}
+
 @media (max-width: 1100px) {            /* 태블릿·작은 노트북 */
   .hd { padding: 16px 20px; }
   main { padding: 18px 20px 16px; gap: 14px; }
@@ -970,7 +985,7 @@ function renderEmpty(pane) {
   const gcls = (i, n) => "gc" + (i === 0 ? " gl" : "") + (i === n - 1 ? " gr" : "");   // 그룹 안 위치별 테두리
 
   let h = `<div class="emp"><div class="head"><h2>국내 공컨 재고</h2><span class="m">선사코드 DYS · ${rows.length}개 터미널</span>
-    <span class="tot">총 재고 <b>${fmtN(totalAll)}</b> 개</span></div><div class="et-wrap"><table class="et"><thead><tr><th class="lb" rowspan="2">구분</th>`;
+    <span class="tot">총 재고 <b>${fmtN(totalAll)}</b> 개</span></div><div class="emp-body"><div class="emp-l"><div class="et-wrap"><table class="et"><thead><tr><th class="lb" rowspan="2">구분</th>`;
   for (const [g, cols] of EMPTY_GROUPS) h += `<th class="g" colspan="${cols.length}"><span>${g}</span></th><th class="gap" rowspan="2"></th>`;
   h += `<th rowspan="2" style="color:var(--text)">합계</th></tr><tr>`;
   for (const [, cols] of EMPTY_GROUPS) cols.forEach(([, sub], i) => { h += `<th class="${gcls(i, cols.length)}">${sub}</th>`; });
@@ -998,8 +1013,9 @@ function renderEmpty(pane) {
   const sumK = (...ks) => ks.reduce((s, k) => s + cellTotal(k), 0);
   const sizeItems = [["20' DC", sumK("GP20"), "#475569"], ["40' DC", sumK("GP40"), "#e64980"], ["40' HC", sumK("HQ40"), "#94a3b8"]];
   sizeItems.push(["특수(OT·FR·RF)", Math.max(0, totalAll - sizeItems.reduce((s, x) => s + x[1], 0)), "#d9dee6"]);
-  h += `<div class="pies">` + donutHTML("터미널별 비중", ranked.map(([c, t]) => [t, (get(c, t) || {}).total || 0, rowColor[t]]))
-     + donutHTML("규격별 비중", sizeItems) + `</div></div>`;
+  // 넓은 화면에서는 표(왼쪽)와 원그래프(오른쪽)를 나란히 놓아 세로 스크롤 없이 한 화면에 들어오게 한다(.emp-body)
+  h += `</div><div class="emp-r"><div class="pies">` + donutHTML("터미널별 비중", ranked.map(([c, t]) => [t, (get(c, t) || {}).total || 0, rowColor[t]]))
+     + donutHTML("규격별 비중", sizeItems) + `</div></div></div></div>`;
   pane.innerHTML = h;
   pane.querySelectorAll(".pie .seg").forEach(n => bindTip(n, n.dataset.tip));
   if (!S.empty.length) { const m = document.createElement("div"); m.className = "empty-msg"; m.textContent = S.updated_at ? "" : "불러오는 중..."; pane.appendChild(m); }
