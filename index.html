@@ -412,7 +412,7 @@ footer { color: #a3a8b8; }
   .share .lg { margin-top: 8px; }
   .pies { padding-top: 16px; gap: 14px 16px; }
   .pie { padding: 12px 20px; gap: 34px; }
-  .pie svg { width: 150px; height: 150px; }
+  .pie svg { width: 186px; height: 186px; }       /* 범례(9줄) 높이만큼 — 상자 높이는 그대로, 원만 크게 */
   .pie .lb { margin-bottom: 8px; }
   .pie .lg { gap: 3px 22px; font-size: 12.5px; }
 }
@@ -422,7 +422,7 @@ footer { color: #a3a8b8; }
   .share { padding-top: 10px; }
   .pies { padding-top: 12px; }
   .pie { padding: 10px 20px; }
-  .pie svg { width: 124px; height: 124px; }
+  .pie svg { width: 170px; height: 170px; }
   .pie .lg { gap: 1px 22px; font-size: 12px; }
 }
 
@@ -1545,7 +1545,8 @@ function drawTyMap(box, storms, T) {
   const lonSpan = TY_VIEW.lon1 - TY_VIEW.lon0, latSpan = (TY_VIEW.lat1 - TY_VIEW.lat0) * TY_YSCALE;
   // 지도가 화면보다 커지면 카드가 늘어나 페이지 전체가 밀린다. 높이를 화면에 맞춰 제한하고
   // 폭은 비율대로 줄인다(남는 좌우 여백은 바다색이라 티가 안 난다).
-  const availH = Math.max(380, Math.min(innerHeight - 310, 900));
+  // 다른 탭과 카드 크기가 같아지게, 지도 아래 끝을 화면 아래(카드 여백 + 바닥글 자리 90px 위)에 맞춘다.
+  const availH = Math.max(380, Math.min(innerHeight - (box.getBoundingClientRect().top + scrollY) - 90, 900));
   let W = Math.max(box.clientWidth || 0, 320), H = Math.round(W * latSpan / lonSpan);
   if (H > availH) { H = availH; W = Math.round(H * lonSpan / latSpan); }
   box.style.height = H + "px";
