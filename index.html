@@ -398,7 +398,6 @@ footer { color: #a3a8b8; }
 .popover { white-space: pre-wrap; width: max-content; max-width: min(560px, calc(100vw - 32px)); }
 .status.open .popover { display: block; }
 .et-wrap { overflow-x: auto; }
-.card.hug { flex: none; min-height: 0; }
 .pies { grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); }
 .tip { max-width: min(360px, calc(100vw - 16px)); }
 
@@ -727,7 +726,7 @@ function renderGantt(pane, key) {
 
   // ---- 치수
   const narrow = pane.clientWidth < 700;                   // 휴대폰: 글자·여백을 줄이고 하루 폭을 고정해 좌우로 민다
-  // 표가 쓸 수 있는 높이 = 화면 아래까지 남은 공간. 카드가 표 크기에 맞춰 줄어들므로(.card.hug) 카드 높이가 아니라 화면에서 잰다.
+  // 표가 쓸 수 있는 높이 = 화면 아래까지 남은 공간. 행이 적어도 흰 카드는 다른 탭처럼 화면 아래까지 유지한다(표만 위에 붙인다).
   const H = Math.max(innerHeight - (pane.getBoundingClientRect().top + scrollY) - 90, 360);
   const P = narrow ? 6 : 12, G = narrow ? 8 : 13, HOUR_ROW = 18, DATE_ROW = 26;      // DATE_ROW: 맨 위 날짜·요일 줄, 그 아래 HOUR_ROW: 시간 눈금
   const TERM_FS = narrow ? 12 : 14, BERTH_FS = narrow ? 11.5 : 13.5;
@@ -1682,7 +1681,6 @@ function renderPane() {
   for (const p of document.querySelectorAll(".pane")) p.classList.remove("on");
   const paneKey = tab === "work" ? "work" : tab === "empty" ? "empty" : tab === "typhoon" ? "typhoon" : tab === "tariff" ? "tariff" : tab === "sur" ? "sur" : tab === "chg" ? "chg" : "gantt";
   const pane = $(paneKey + "Pane"); pane.classList.add("on");
-  $("card").classList.toggle("hug", paneKey === "gantt");       // 선석 탭은 카드를 표 크기에 맞춘다(행이 적은 항만에서 빈 흰 공간이 남지 않게)
   hideTip();
   if (paneKey === "gantt") renderGantt(pane, tab);
   else if (paneKey === "work") renderWork(pane);
