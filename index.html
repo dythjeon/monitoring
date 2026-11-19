@@ -327,6 +327,30 @@ footer { color: #a3a8b8; }
    반응형 (2026-11-19): 화면 폭에 따라 배치가 스스로 바뀐다.
    테마 블록보다 뒤에 있어야 한다(같은 선택자를 테마가 덮어쓰기 때문).
    ===================================================================== */
+/* ---- 스케줄 변경 (틀은 Barge Tariff 의 .tf 를 같이 쓴다) ---- */
+.tab .bd { display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 5px; border-radius: 999px; background: #ef4444; color: #fff; font-size: 10.5px; font-weight: 700; line-height: 17px; text-align: center; vertical-align: 1px; }
+.tab.on .bd { background: #fff; color: var(--primary); }
+.cg .day { margin: 20px 2px 6px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.cg .ev { display: grid; grid-template-columns: 52px minmax(190px, 300px) 1fr; gap: 4px 18px; align-items: start; padding: 12px; border-top: 1px solid var(--border); }
+.cg .ev:hover { background: var(--hover-row); }
+.cg .ev .at { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; padding-top: 2px; }
+.cg .who b { font-size: 14px; }
+.cg .who .vy { color: var(--muted); font-size: 12px; margin-left: 7px; }
+.cg .who .tm { display: block; font-size: 12px; font-weight: 700; margin-top: 3px; }
+.cg .what { font-size: 13px; line-height: 1.75; min-width: 0; }
+.cg .pl { display: inline-block; border-radius: 6px; padding: 0 8px; font-size: 11.5px; font-weight: 700; margin: 0 6px 3px 0; line-height: 20px; }
+.cg .pl.late { background: #ffe9e9; color: #c92a2a; } .cg .pl.early { background: #e7f0ff; color: #1c5fd4; }
+.cg .pl.berth { background: #fff3d6; color: #a86400; } .cg .pl.new { background: #e3f8ee; color: #0b7a4b; } .cg .pl.gone { background: #eceef3; color: #5c6370; }
+.cg .ln .k { display: inline-block; width: 34px; color: var(--muted); font-size: 12px; }
+.cg .ln .old { color: var(--muted); text-decoration: line-through; }
+.cg .ln .old, .cg .ln b { white-space: nowrap; }
+.cg .ln .d { margin-left: 8px; font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; }
+.cg .ln .d.late { color: #c92a2a; } .cg .ln .d.early { color: #1c5fd4; }
+@media (max-width: 760px) {
+  .cg .ev { grid-template-columns: 44px 1fr; padding: 11px 6px; }
+  .cg .what { grid-column: 2; }
+}
+
 /* ---- Basic Surcharge (틀은 Barge Tariff 의 .tf 를 같이 쓴다) ---- */
 .su .fld.sm { flex: 0 1 170px; }
 .su .fld.loc input { cursor: pointer; text-transform: none; background: var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23858b9a' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.6-3.6'/%3E%3C/svg%3E") right 11px center no-repeat; padding-right: 34px; text-overflow: ellipsis; }
@@ -374,6 +398,7 @@ footer { color: #a3a8b8; }
 .popover { white-space: pre-wrap; width: max-content; max-width: min(560px, calc(100vw - 32px)); }
 .status.open .popover { display: block; }
 .et-wrap { overflow-x: auto; }
+.card.hug { flex: none; min-height: 0; }
 .pies { grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); }
 .tip { max-width: min(360px, calc(100vw - 16px)); }
 
@@ -469,6 +494,7 @@ footer { color: #a3a8b8; }
     <div class="pane" data-pane="typhoon" id="typhoonPane"></div>
     <div class="pane" data-pane="tariff" id="tariffPane"></div>
     <div class="pane" data-pane="sur" id="surPane"></div>
+    <div class="pane" data-pane="chg" id="chgPane"></div>
   </div>
 </main>
 <footer>BerthMonitor Web · 터미널 사이트에서 수집한 자료이며 실제 작업 일정과 다를 수 있습니다<div style="margin-top:6px;font-weight:600;letter-spacing:.04em">Powered by THJEON</div></footer>
@@ -507,7 +533,7 @@ const COUNTRY_COLOR = { "일본": "#e64980", "중국": "#7048e8", "동남아": "
 const SUR_ENABLED = false;
 const TAB_KEYS = ["전체", "부산", "인천", "광양", "평택", "군산"];
 const TABS = [["전체", "전체"], ["부산", "부산항"], ["인천", "인천항"], ["광양", "광양항"], ["평택", "평택항"], ["군산", "군산항"],
-              ["work", "본선작업현황"], ["empty", "Empty Stock"], ["typhoon", "Typhoon"], ["tariff", "Barge Tariff"],
+              ["work", "본선작업현황"], ["chg", "스케줄 변경"], ["empty", "Empty Stock"], ["typhoon", "Typhoon"], ["tariff", "Barge Tariff"],
               ["sur", "Basic Surcharge"]].filter(t => t[0] !== "sur" || SUR_ENABLED);
 const EMPTY_GROUPS = [["DC", [["GP20", "20'"], ["GP40", "40'"], ["HQ40", "4H"]]],
                       ["OT", [["OT20", "20'"], ["OT40", "40'"]]],
@@ -590,6 +616,10 @@ function buildTabs() {
   for (const [key, label] of TABS) {
     const b = document.createElement("button");
     b.className = "tab" + (key === tab ? " on" : ""); b.textContent = label; b.dataset.key = key;
+    if (key === "chg") {            // 최근 24시간 안에 바뀐 건수(신규 제외)를 탭에 붙인다
+      const n = chgRecent().filter(e => e.kind !== "new").length;
+      if (n) { const s = document.createElement("span"); s.className = "bd"; s.textContent = n > 99 ? "99+" : n; b.appendChild(s); }
+    }
     b.onclick = () => { tab = key; sessionStorage.setItem("bm.tab", key); buildTabs(); renderPane(); };
     box.appendChild(b);
   }
@@ -697,7 +727,8 @@ function renderGantt(pane, key) {
 
   // ---- 치수
   const narrow = pane.clientWidth < 700;                   // 휴대폰: 글자·여백을 줄이고 하루 폭을 고정해 좌우로 민다
-  const H = Math.max(pane.clientHeight, 360);
+  // 표가 쓸 수 있는 높이 = 화면 아래까지 남은 공간. 카드가 표 크기에 맞춰 줄어들므로(.card.hug) 카드 높이가 아니라 화면에서 잰다.
+  const H = Math.max(innerHeight - (pane.getBoundingClientRect().top + scrollY) - 90, 360);
   const P = narrow ? 6 : 12, G = narrow ? 8 : 13, HOUR_ROW = 18, DATE_ROW = 26;      // DATE_ROW: 맨 위 날짜·요일 줄, 그 아래 HOUR_ROW: 시간 눈금
   const TERM_FS = narrow ? 12 : 14, BERTH_FS = narrow ? 11.5 : 13.5;
   const berthLabel = (b) => b == null ? "—" : `${b}선석`;
@@ -722,10 +753,11 @@ function renderGantt(pane, key) {
   const top = DATE_ROW + HOUR_ROW + 6, bottom = H - 8 - FOOT;
   const units = Math.max(totalUnits, MIN_ROWS);
   const unitH = Math.max(34, Math.min(80, (bottom - top) / units));
-  const slack = Math.max(MIN_ROWS - totalUnits, 0) / 2 * unitH;
+  // 행이 적은 탭(광양·평택·군산)도 표를 위에 붙여 그린다. 예전에는 가운데에 두느라 표 위아래로 빈 띠가 생겼다.
+  const slack = 0;
   const y0 = top + slack;                              // 첫 행 위쪽
   const chartBottom = y0 + totalUnits * unitH;
-  const svgH = Math.max(H, chartBottom + slack + 8 + FOOT);
+  const svgH = chartBottom + 8 + FOOT;                 // 안내 문구는 표 바로 아래에 (화면 맨 아래로 떨어뜨리지 않는다)
   const spanMs = we - ws, chartW = right - left;
   const xOf = (t) => left + (t - ws) / spanMs * chartW;
   const dateBase = chartBottom + slack;
@@ -806,6 +838,8 @@ function renderGantt(pane, key) {
   const defs = el("defs"); defs.appendChild(clip); svg.appendChild(defs);
   const barLayer = el("g", { "clip-path": `url(#clip-${key})` }); svg.appendChild(barLayer);
 
+  const chgMark = new Map();
+  for (const e of chgRecent()) if (e.kind === "chg") chgMark.set(chgKey(e.terminal, e.ship, e.voyage), e);     // 같은 배는 가장 최근 것
   for (const d of usable) {
     const k = d.terminal + "\u0000" + d.berth;
     const yc = y0 + (rowTop.get(k) + laneOf.get(d) + 0.5) * unitH;
@@ -835,6 +869,12 @@ function renderGantt(pane, key) {
     if (d.route_label) html += "\n항로: " + esc(d.route_label);
     if (d.line) html += "\n선사: " + esc(d.line);
     html += `\n<span style="opacity:.7">${esc(d.terminal)} ${esc(d.berth)}선석${live ? " · 접안 중" : ""}</span>`;
+    // 최근 24시간 안에 일정이 바뀐 배: 막대 오른쪽 위에 주황 점 + 툴팁에 무엇이 바뀌었는지
+    const ce = chgMark.get(chgKey(d.terminal, d.ship_name, d.voyage));
+    if (ce) {
+      g.appendChild(el("circle", { cx: Math.max(x1 + 5, x2 - 5), cy: yc - barH / 2 + 5, r: 4.5, fill: "#ffb020", stroke: "#fff", "stroke-width": 1.5 }));
+      html += `\n<span style="color:#ffcf70">변경: ${esc(chgSummary(ce))} · ${fmtDT(parseDT(ce.t))} 감지</span>`;
+    }
     bindTip(g, html);
     barLayer.appendChild(g);
   }
@@ -1187,6 +1227,68 @@ function tariffSearch() {
   sum.innerHTML = `<span><b>${fmtN(total)}</b>건</span>${total > LIMIT ? `<span>앞 ${LIMIT}건만 표시 · 도착지를 더 입력해 좁혀 보세요</span>` : ""}
     <span>도착지별로 20' Round 가 싼 순서 · 한쪽 요율이 없으면(N/A) Round 는 –</span>`;
   out.innerHTML = h;
+}
+
+// ===================== 스케줄 변경 =====================
+// 수집할 때마다 서버(changes.py)가 "마지막으로 알린 값"과 비교해 쌓아 둔 기록(S.changes.events)을 보여준다.
+//   chg = 접안/출항 30분 이상 변동 또는 선석 변경 · new = 처음 보이는 배 · gone = 접안 전인데 목록에서 사라짐
+let chgFilter = "all";
+const chgKey = (t, s, v) => [t || "", s || "", v || ""].join("|");
+const chgAll = () => ((S.changes || {}).events || []);
+function chgRecent() {            // 최근 24시간, 오래된 것부터
+  const cut = Date.now() - 864e5;
+  return chgAll().filter(e => parseDT(e.t) && parseDT(e.t).getTime() >= cut);
+}
+function fmtShift(min) {          // +390 -> "+6.5h", -20 -> "−20분"
+  const a = Math.abs(min), sign = min > 0 ? "+" : "−";
+  return sign + (a >= 60 ? (Math.round(a / 6) / 10) + "h" : a + "분");
+}
+function chgSummary(e) {          // 간트 툴팁용 한 줄
+  const p = [];
+  if (Math.abs(e.d_eta || 0) >= 30) p.push("접안 " + fmtShift(e.d_eta));
+  if (Math.abs(e.d_etd || 0) >= 30) p.push("출항 " + fmtShift(e.d_etd));
+  if ((e.berth0 || "") !== (e.berth1 || "")) p.push(`선석 ${e.berth0 || "—"} → ${e.berth1 || "—"}`);
+  return p.join(" · ");
+}
+function renderChanges(pane) {
+  const all = chgAll().slice().sort((a, b) => b.t.localeCompare(a.t));
+  const isBerth = (e) => e.kind === "chg" && (e.berth0 || "") !== (e.berth1 || "");
+  const isTime = (e) => e.kind === "chg" && (Math.abs(e.d_eta || 0) >= 30 || Math.abs(e.d_etd || 0) >= 30);
+  const FILTERS = [["all", "전체", () => true], ["time", "시간 변경", isTime], ["berth", "선석 변경", isBerth],
+                   ["new", "신규", e => e.kind === "new"], ["gone", "빠짐", e => e.kind === "gone"]];
+  const pass = (FILTERS.find(f => f[0] === chgFilter) || FILTERS[0])[2];
+  const list = all.filter(pass);
+  const tm = (s) => { const d = parseDT(s); return d ? fmtDT(d) : "—"; };
+  const line = (label, a, b, d) => `<div class="ln"><span class="k">${label}</span><span class="old">${tm(a)}</span> → <b>${tm(b)}</b><span class="d ${d > 0 ? "late" : "early"}">${fmtShift(d)}</span></div>`;
+  let h = `<div class="tf cg"><div class="head"><h2>스케줄 변경</h2><span class="m">수집할 때마다 이전 일정과 비교 · 30분 이상 바뀐 것만 · 최근 72시간</span></div>
+    <div class="chips" style="margin-top:0">${FILTERS.map(([k, lb, fn]) =>
+      `<button type="button" class="chip${k === chgFilter ? " on" : ""}" data-f="${k}">${lb} ${all.filter(fn).length}</button>`).join("")}</div>`;
+  if (!list.length) {
+    h += `<div class="hint">${all.length ? "이 조건에 해당하는 변경이 없습니다"
+      : S.changes ? "아직 감지된 변경이 없습니다<br>이 기능을 켠 뒤 수집된 일정부터 비교하므로, 터미널 일정이 바뀌면 여기에 쌓입니다" : "불러오는 중..."}</div>`;
+  }
+  let day = "";
+  for (const e of list) {
+    const t = parseDT(e.t), dk = fmtDay(t);
+    if (dk !== day) { day = dk; h += `<div class="day">${dk} 감지</div>`; }
+    const pills = [], lines = [];
+    if (e.kind === "chg") {
+      if (Math.abs(e.d_eta || 0) >= 30) { pills.push(e.d_eta > 0 ? ["late", "접안 지연"] : ["early", "접안 앞당김"]); lines.push(line("접안", e.eta0, e.eta1, e.d_eta)); }
+      if (Math.abs(e.d_etd || 0) >= 30) { pills.push(e.d_etd > 0 ? ["late", "출항 지연"] : ["early", "출항 앞당김"]); lines.push(line("출항", e.etd0, e.etd1, e.d_etd)); }
+      if (isBerth(e)) { pills.push(["berth", "선석 변경"]); lines.push(`<div class="ln"><span class="k">선석</span><span class="old">${esc(e.berth0 || "—")}</span> → <b>${esc(e.berth1 || "—")}</b></div>`); }
+    } else if (e.kind === "new") {
+      pills.push(["new", "신규"]); lines.push(`<div class="ln"><span class="k">예정</span><b>${tm(e.eta1)}</b> ~ ${tm(e.etd1)}</div>`);
+    } else {
+      pills.push(["gone", "빠짐"]); lines.push(`<div class="ln"><span class="k">예정</span><span class="old">${tm(e.eta0)} ~ ${tm(e.etd0)}</span> 일정이 목록에서 사라졌습니다</div>`);
+    }
+    const berth = e.kind === "gone" ? e.berth0 : e.berth1;
+    h += `<div class="ev"><div class="at">${pad2(t.getHours())}:${pad2(t.getMinutes())}</div>
+      <div class="who"><b>${esc(e.ship)}</b>${e.voyage ? `<span class="vy">${esc(e.voyage)}</span>` : ""}
+        <span class="tm" style="color:${REGION_COLOR[e.region] || C.text}">${esc(e.terminal)}${berth ? " " + esc(berth) + "선석" : ""}</span></div>
+      <div class="what"><div>${pills.map(([c, lb]) => `<span class="pl ${c}">${lb}</span>`).join("")}</div>${lines.join("")}</div></div>`;
+  }
+  pane.innerHTML = h + `</div>`;
+  pane.querySelectorAll(".chip").forEach(b => b.onclick = () => { chgFilter = b.dataset.f; renderChanges(pane); });
 }
 
 // ===================== Basic Surcharge =====================
@@ -1578,14 +1680,16 @@ function tySideHTML(T, storms, goneN) {
 // ===================== 렌더 진입 =====================
 function renderPane() {
   for (const p of document.querySelectorAll(".pane")) p.classList.remove("on");
-  const paneKey = tab === "work" ? "work" : tab === "empty" ? "empty" : tab === "typhoon" ? "typhoon" : tab === "tariff" ? "tariff" : tab === "sur" ? "sur" : "gantt";
+  const paneKey = tab === "work" ? "work" : tab === "empty" ? "empty" : tab === "typhoon" ? "typhoon" : tab === "tariff" ? "tariff" : tab === "sur" ? "sur" : tab === "chg" ? "chg" : "gantt";
   const pane = $(paneKey + "Pane"); pane.classList.add("on");
+  $("card").classList.toggle("hug", paneKey === "gantt");       // 선석 탭은 카드를 표 크기에 맞춘다(행이 적은 항만에서 빈 흰 공간이 남지 않게)
   hideTip();
   if (paneKey === "gantt") renderGantt(pane, tab);
   else if (paneKey === "work") renderWork(pane);
   else if (paneKey === "typhoon") renderTyphoon(pane);
   else if (paneKey === "tariff") renderTariff(pane);
   else if (paneKey === "sur") renderSur(pane);
+  else if (paneKey === "chg") renderChanges(pane);
   else renderEmpty(pane);
 }
 // 환율 띠. 같은 묶음을 두 번 이어 붙이고 절반만큼 흘려 보내면 끊김 없이 돈다.
@@ -1613,6 +1717,7 @@ function renderFx() {
 
 function renderAll() {
   renderFx();
+  buildTabs();            // 스케줄 변경 탭의 건수 배지를 새 자료로
   const [ws, we] = ganttWindow();
   renderStats(S.data.filter(d => inWindow(d, ws, we)));
   renderStatus();
@@ -1748,7 +1853,7 @@ new ResizeObserver(() => {
 $("status").addEventListener("click", (e) => { e.stopPropagation(); $("status").classList.toggle("open"); });
 document.addEventListener("click", () => $("status").classList.remove("open"));
 addEventListener("touchstart", hideTip, { passive: true });      // 다른 곳을 건드리면 열려 있던 툴팁을 닫는다
-setInterval(() => { renderNextChip(); if (tab !== "work" && tab !== "empty" && tab !== "typhoon" && tab !== "tariff" && tab !== "sur") renderPane(); }, 60000);   // 현재 시각선 1분마다
+setInterval(() => { renderNextChip(); if (tab !== "work" && tab !== "empty" && tab !== "typhoon" && tab !== "tariff" && tab !== "sur" && tab !== "chg") renderPane(); }, 60000);   // 현재 시각선 1분마다
 setInterval(loadData, STATIC ? 60000 : 180000);                                                                           // SSE 가 끊겨도 3분마다 보정
 document.addEventListener("visibilitychange", () => { if (!document.hidden) loadData(); });
 

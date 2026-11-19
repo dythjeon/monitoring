@@ -21,6 +21,7 @@ sys.path.insert(0, HERE)
 from server import collect, REFRESH_SEC          # noqa: E402  (server import 는 부작용 없음)
 from scraper import SOURCES                      # noqa: E402
 from surcharge import fetch_locations            # noqa: E402
+import changes                                   # noqa: E402
 
 OUT = os.path.join(HERE, "site")
 SUR_ENABLED = False      # Basic Surcharge 탭 보류(2026-11-19). index.html 의 SUR_ENABLED 와 같이 켠다.
@@ -42,8 +43,35 @@ def encrypt_payload(payload, password):
 
 
 
+def previous_changes(password):
+    """직전에 게시한 data.json 에서 스케줄 변경 상태(changes)를 꺼낸다. GitHub Actions 는 실행할 때마다
+    빈 상태로 시작하므로, 기준값·기록을 이어 가려면 이미 올라가 있는 파일을 다시 읽어야 한다.
+    못 읽으면 None (그러면 이번 수집을 새 기준으로 삼고 기록은 처음부터 다시 쌓인다)."""
+    repo = os.environ.get("GITHUB_REPOSITORY", "")          # "아이디/저장소"
+    url = os.environ.get("SITE_URL") or (f"https://{repo.split('/')[0]}.github.io/{repo.split('/')[1]}" if "/" in repo else "")
+    if not url:
+        return None
+    try:
+        import requests
+        j = requests.get(url.rstrip("/") + "/data.json", params={"t": int(datetime.now().timestamp())}, timeout=20).json()
+        if j.get("enc"):
+            if not password:
+                return None
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+            key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), j["salt"].encode("utf-8"), int(j["iter"]))
+            j = json.loads(AESGCM(key).decrypt(base64.b64decode(j["iv"]), base64.b64decode(j["ct"]), None))
+        return j.get("changes")
+    except Exception as e:
+        print("   ! 직전 스케줄 변경 상태를 읽지 못함:", e)
+        return None
+
+
 def main():
     rows, work, empty, errors, stats, typhoons, fx = collect()
+    password = os.environ.get("SITE_PASSWORD", "").strip()
+    state_file = os.path.join(HERE, "changes_state.json")
+    chg = changes.update(previous_changes(password) or changes.load_file(state_file), rows, stats)
+    changes.save_file(state_file, chg)
     sur_locs = None
     if SUR_ENABLED:                       # Basic Surcharge 탭의 Select Location 목록
         try:
@@ -57,7 +85,7 @@ def main():
         "updated_at": now.strftime("%Y-%m-%d %H:%M:%S"),
         "fetching": False,
         "data": rows, "work": work, "empty": empty,
-        "errors": errors, "stats": stats, "typhoons": typhoons, "fx": fx, "sur_locs": sur_locs,
+        "errors": errors, "stats": stats, "typhoons": typhoons, "fx": fx, "sur_locs": sur_locs, "changes": chg,
         "refresh_sec": int(os.environ.get("BERTH_STATIC_REFRESH_SEC", "1800")),   # 아티팩트 재게시 주기(30분)
         "server_now": now.strftime("%Y-%m-%dT%H:%M:%S"),
         "sources": [name for name, _fn in SOURCES],
@@ -66,7 +94,6 @@ def main():
 
     os.makedirs(OUT, exist_ok=True)
     with open(os.path.join(OUT, "data.json"), "w", encoding="utf-8") as f:
-        password = os.environ.get("SITE_PASSWORD", "").strip()
         json.dump(encrypt_payload(payload, password) if password else payload, f, ensure_ascii=False)
     shutil.copyfile(os.path.join(HERE, "index.html"), os.path.join(OUT, "index.html"))
     shutil.copyfile(os.path.join(HERE, "coast.json"), os.path.join(OUT, "coast.json"))

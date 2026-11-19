@@ -33,6 +33,7 @@ import re
 from typhoon import fetch_typhoons
 from fx import fetch_fx
 from surcharge import fetch_locations, fetch_surcharge
+import changes
 
 try:                                   # 한글 콘솔 출력 깨짐 방지
     sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
@@ -82,7 +83,10 @@ STATE = {
     "data": [], "work": [], "empty": [], "errors": [], "stats": [],
     "typhoons": None,          # typhoon.fetch_typhoons() 결과 (태풍 탭)
     "fx": None,                # fx.fetch_fx() 결과 (환율 띠)
+    "changes": None,           # changes.update() 결과 (스케줄 변경 탭)
 }
+# 스케줄 변경 감지의 기준값·기록. 서버를 껐다 켜도 이어지게 파일로 둔다(.gitignore).
+CHANGES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "changes_state.json")
 LOCK = threading.Lock()
 WAKE = threading.Event()           # 수동 새로고침 요청이 오면 깨운다
 LISTENERS = set()                  # SSE 구독자 큐
@@ -180,8 +184,10 @@ def refresh_once():
     t0 = time.time()
     try:
         rows, work, empty, errors, stats, typhoons, fx = collect()
+        chg = changes.update(STATE["changes"] or changes.load_file(CHANGES_FILE), rows, stats)
+        changes.save_file(CHANGES_FILE, chg)
         with LOCK:
-            STATE.update(data=rows, work=work, empty=empty, errors=errors, stats=stats, typhoons=typhoons, fx=fx,
+            STATE.update(data=rows, work=work, empty=empty, errors=errors, stats=stats, typhoons=typhoons, fx=fx, changes=chg,
                          updated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             STATE["generation"] += 1
             gen = STATE["generation"]
