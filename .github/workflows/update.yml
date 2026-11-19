@@ -10,7 +10,7 @@ on:
   workflow_dispatch:              # Actions 탭에서 수동 실행
 
 permissions:
-  contents: read
+  contents: write            # 항차 이력을 history 브랜치에 올리기 위해
   pages: write
   id-token: write
 
@@ -32,8 +32,35 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install requests certifi beautifulsoup4 cryptography
+      # 항차 이력은 저장소의 history 브랜치에 (암호화된 파일 하나로) 보관한다. 실행할 때마다 받아 와서 이어 쌓는다.
+      - name: 항차 이력 받아 오기
+        run: |
+          set +e
+          git ls-remote --exit-code --heads origin history >/dev/null 2>&1
+          rc=$?
+          set -e
+          if [ $rc -eq 0 ]; then
+            git clone --quiet --depth 1 --branch history "https://github.com/${{ github.repository }}.git" hist               || { rm -rf hist; echo "HISTORY_SKIP=1" >> "$GITHUB_ENV"; }
+          elif [ $rc -eq 2 ]; then
+            mkdir -p hist            # 브랜치가 아직 없다 = 처음
+          else
+            echo "HISTORY_SKIP=1" >> "$GITHUB_ENV"     # 확인 실패: 이번에는 이력을 건드리지 않는다
+          fi
       - name: 수집 → site/
         run: python build_static.py
+      # 달라졌을 때만 올린다. 암호문은 압축이 안 돼 커밋을 쌓으면 저장소가 금방 커지므로, 늘 커밋 하나짜리로 덮어쓴다.
+      - name: 항차 이력 올리기
+        if: env.HISTORY_SKIP != '1'
+        continue-on-error: true
+        run: |
+          [ -f hist/history.json ] || exit 0
+          cd hist
+          if [ -d .git ] && [ -z "$(git status --porcelain)" ]; then exit 0; fi
+          rm -rf .git
+          git init -q -b history
+          git add history.json
+          git -c user.name="opsboard-bot" -c user.email="41898282+github-actions[bot]@users.noreply.github.com"             commit -q -m "항차 이력 $(date +'%F %R')"
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" HEAD:history
       - uses: actions/configure-pages@v5
         with:
           enablement: true      # Pages 가 꺼져 있으면 자동으로 켠다

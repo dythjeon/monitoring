@@ -22,6 +22,7 @@ from server import collect, REFRESH_SEC          # noqa: E402  (server import �
 from scraper import SOURCES                      # noqa: E402
 from surcharge import fetch_locations            # noqa: E402
 import changes                                   # noqa: E402
+import history                                   # noqa: E402
 
 OUT = os.path.join(HERE, "site")
 SUR_ENABLED = False      # Basic Surcharge 탭 보류(2026-11-19). index.html 의 SUR_ENABLED 와 같이 켠다.
@@ -66,6 +67,44 @@ def previous_changes(password):
         return None
 
 
+def update_history(rows, stats, password):
+    """항차별 이력(history.py)을 hist/history.json 에 이어 쌓고 site/ 에 같이 올린다.
+
+    GitHub Actions 에서는 hist/ 가 저장소의 history 브랜치를 받아 둔 폴더다(update.yml 이 받아 오고, 수집 뒤
+    달라졌으면 다시 올린다). Pages 에 올라간 파일을 다시 읽는 방식과 달리 주소가 바뀌거나 배포가 한 번 실패해도
+    이력이 끊기지 않는다. 기존 파일을 못 읽으면(비밀번호 불일치 등) 덮어쓰지 않고 그대로 둔다."""
+    if os.environ.get("HISTORY_SKIP") == "1":
+        print("   ! 항차 이력: history 브랜치를 받지 못해 이번에는 건너뜀")
+        return
+    hist_dir = os.environ.get("HISTORY_DIR") or os.path.join(HERE, "hist")
+    path = os.path.join(hist_dir, "history.json")
+    state = None
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                j = json.load(f)
+            if j.get("enc"):
+                if not password:
+                    raise ValueError("암호화된 이력인데 SITE_PASSWORD 가 없음")
+                from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+                key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), j["salt"].encode("utf-8"), int(j["iter"]))
+                j = json.loads(AESGCM(key).decrypt(base64.b64decode(j["iv"]), base64.b64decode(j["ct"]), None))
+            state = j
+        except Exception as e:
+            print("   ! 항차 이력을 읽지 못해 이번에는 기록하지 않음:", e)
+            shutil.copyfile(path, os.path.join(OUT, "history.json"))
+            return
+    state, changed = history.update(state, rows, stats)
+    if changed or not os.path.exists(path):
+        os.makedirs(hist_dir, exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(encrypt_payload(state, password) if password else state, f, ensure_ascii=False, separators=(",", ":"))
+        os.replace(tmp, path)
+    shutil.copyfile(path, os.path.join(OUT, "history.json"))
+    print(f"   항차 이력 {len(state['voy'])}건" + (" (갱신)" if changed else ""))
+
+
 def main():
     rows, work, empty, errors, stats, typhoons, fx = collect()
     password = os.environ.get("SITE_PASSWORD", "").strip()
@@ -101,6 +140,10 @@ def main():
     if os.path.exists(os.path.join(HERE, "tariff.enc.json")):        # Barge 요율(make_tariff.py 가 암호화해 둔 것)
         shutil.copyfile(os.path.join(HERE, "tariff.enc.json"), os.path.join(OUT, "tariff.enc.json"))
     open(os.path.join(OUT, ".nojekyll"), "w").close()
+    try:
+        update_history(rows, stats, password)
+    except Exception as e:                      # 이력 때문에 사이트 갱신이 멈추면 안 된다
+        print("   ! 항차 이력 오류:", e)
     # claude.ai 아티팩트용: 게시 시 문서 뼈대(doctype/html/head/body)를 호스트가 씌우므로 벗겨낸 본문만 둔다.
     with open(os.path.join(HERE, "index.html"), encoding="utf-8") as f:
         html = f.read()

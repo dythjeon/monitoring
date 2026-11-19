@@ -240,6 +240,38 @@ footer { text-align: center; color: #b4b8c2; font-size: 11px; padding: 0 0 14px;
 .tf .best { display: inline-block; border-radius: 999px; padding: 1px 7px; font-size: 10.5px; font-weight: 700; background: var(--primary-soft); color: var(--primary); margin-left: 6px; vertical-align: 1px; }
 .tf .tag { display: inline-block; border-radius: 6px; padding: 1px 6px; font-size: 10.5px; font-weight: 700; background: var(--bg); color: var(--muted); margin-right: 5px; }
 .tf .hint { padding: 34px 16px; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.8; }
+/* ---- 항차 이력 ---- */
+.hs .fld { max-width: 420px; }
+.hs .fld input { text-transform: none; }
+.hs .sel { border: 1px solid var(--table-line); border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 13px; background: var(--card); color: var(--text); }
+.hs .list { border: 1px solid var(--border); border-radius: 12px; overflow: auto; min-height: 0; }
+.hs .vh, .hs .vr { display: grid; grid-template-columns: minmax(170px, 1.3fr) minmax(110px, .8fr) minmax(250px, 1.7fr) 84px 68px 78px; gap: 4px 14px; align-items: center; padding: 11px 14px; }
+.hs .vh { position: sticky; top: 0; z-index: 1; background: var(--bg); color: var(--muted); font-size: 11.5px; font-weight: 700; padding-top: 9px; padding-bottom: 9px; }
+.hs .vr { border-top: 1px solid var(--border); cursor: pointer; font-size: 13px; }
+.hs .vr:hover, .hs .vr.open { background: var(--hover-row); }
+.hs .nm b { font-size: 14px; } .hs .nm span { color: var(--muted); font-size: 12px; margin-left: 7px; white-space: nowrap; }
+.hs .tm { font-weight: 700; font-size: 12.5px; } .hs .tm small { color: var(--muted); font-weight: 500; margin-left: 5px; }
+.hs .eta { font-variant-numeric: tabular-nums; } .hs .eta span { color: var(--muted); white-space: nowrap; } .hs .eta b { white-space: nowrap; }
+.hs .dl { font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hs .late { color: #c92a2a; } .hs .early { color: #1c5fd4; } .hs .zero { color: var(--muted); font-weight: 500; }
+.hs .cnt { color: var(--muted); font-size: 12px; text-align: right; white-space: nowrap; }
+.hs .st { display: inline-block; border-radius: 6px; padding: 0 8px; font-size: 11.5px; font-weight: 700; line-height: 20px; white-space: nowrap; }
+.hs .st.plan { background: #e7f0ff; color: #1c5fd4; } .hs .st.on { background: #e3f8ee; color: #0b7a4b; }
+.hs .st.done { background: #eceef3; color: #5c6370; } .hs .st.gone { background: #fff3d6; color: #a86400; }
+.hs .tl { padding: 4px 14px 16px; background: var(--hover-row); }
+.hs .tl .tot { font-size: 12.5px; color: var(--muted); margin: 2px 0 8px; display: flex; gap: 4px 16px; flex-wrap: wrap; }
+.hs .tl .tot b { color: var(--text); }
+.hs .tl table { width: auto; min-width: min(100%, 620px); background: var(--card); border-radius: 10px; overflow: hidden; font-size: 12.5px; }
+.hs .tl th { position: static; background: var(--card); padding: 7px 12px; }
+.hs .tl td { padding: 7px 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hs .tl td.nt { color: var(--muted); }
+@media (max-width: 820px) {
+  .hs .vh { display: none; }
+  .hs .vr { grid-template-columns: 1fr auto; }
+  .hs .vr .eta { grid-column: 1 / -1; }
+  .hs .vr .dl { text-align: left; } .hs .vr .cnt { text-align: right; }
+  .hs .tl { overflow-x: auto; }
+}
 /* ---- 비밀번호 잠금 화면 ---- */
 .gate { position: fixed; inset: 0; z-index: 1000; background: var(--bg); display: none; align-items: center; justify-content: center; padding: 20px; }
 .gate.on { display: flex; }
@@ -520,6 +552,7 @@ footer { color: #a3a8b8; }
     <div class="pane" data-pane="tariff" id="tariffPane"></div>
     <div class="pane" data-pane="sur" id="surPane"></div>
     <div class="pane" data-pane="chg" id="chgPane"></div>
+    <div class="pane" data-pane="hist" id="histPane"></div>
   </div>
 </main>
 <footer>BerthMonitor Web · 터미널 사이트에서 수집한 자료이며 실제 작업 일정과 다를 수 있습니다<div style="margin-top:6px;font-weight:600;letter-spacing:.04em">Powered by THJEON</div></footer>
@@ -558,7 +591,7 @@ const COUNTRY_COLOR = { "일본": "#e64980", "중국": "#7048e8", "동남아": "
 const SUR_ENABLED = false;
 const TAB_KEYS = ["전체", "부산", "인천", "광양", "평택", "군산"];
 const TABS = [["전체", "전체"], ["부산", "부산항"], ["인천", "인천항"], ["광양", "광양항"], ["평택", "평택항"], ["군산", "군산항"],
-              ["work", "본선작업현황"], ["chg", "스케줄 변경"], ["empty", "Empty Stock"], ["typhoon", "Typhoon"], ["tariff", "Barge Tariff"],
+              ["work", "본선작업현황"], ["chg", "스케줄 변경"], ["hist", "항차 이력"], ["empty", "Empty Stock"], ["typhoon", "Typhoon"], ["tariff", "Barge Tariff"],
               ["sur", "Basic Surcharge"]].filter(t => t[0] !== "sur" || SUR_ENABLED);
 const EMPTY_GROUPS = [["DC", [["GP20", "20'"], ["GP40", "40'"], ["HQ40", "4H"]]],
                       ["OT", [["OT20", "20'"], ["OT40", "40'"]]],
@@ -1317,6 +1350,139 @@ function renderChanges(pane) {
   pane.querySelectorAll(".chip").forEach(b => b.onclick = () => { chgFilter = b.dataset.f; renderChanges(pane); });
 }
 
+// ===================== 항차 이력 =====================
+// 항차(터미널 + 선명 + 항차)마다 처음 예정에서 출항까지 어떻게 바뀌었는지. history.py 가 쌓아 history.json 으로 올린다.
+// 스케줄 변경 탭(최근 72시간 알림)과 달리 끝난 항차도 400일 동안 남는다. 크기가 커질 수 있어 이 탭을 열 때만 읽는다.
+const HS = { built: false, data: null, loading: false, at: 0, err: "", sort: "recent", open: new Set() };
+const hsKey = (v) => [v.terminal, v.ship, v.voyage, v.first].join("|");
+const hsMin = (a, b) => { const x = parseDT(a), y = parseDT(b); return x && y ? Math.round((y - x) / 6e4) : 0; };
+function hsDelay(min) {            // +5760 -> "+4일", +390 -> "+6.5시간"
+  const a = Math.abs(min);
+  if (a < 10) return "변동 없음";
+  return (min > 0 ? "+" : "−") + (a >= 1440 ? (Math.round(a / 144) / 10) + "일" : a >= 60 ? (Math.round(a / 6) / 10) + "시간" : a + "분");
+}
+const hsCls = (min) => Math.abs(min) < 10 ? "zero" : min > 0 ? "late" : "early";
+function hsStatus(v) {
+  if (v.end === "removed") return ["gone", "일정 빠짐"];
+  const now = Date.now(), a = parseDT(v.eta), d = parseDT(v.etd);
+  if (v.end === "departed" || (d && d.getTime() < now)) return ["done", "출항"];
+  return a && a.getTime() > now ? ["plan", "입항 예정"] : ["on", "접안 중"];
+}
+async function loadHist() {
+  if (HS.loading) return;
+  HS.loading = true;
+  let retry = false;
+  try {
+    const r = await fetch("./history.json?t=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) throw new Error("none");
+    let j = await r.json();
+    if (j.enc) { if (!memKey) { retry = true; throw new Error("key"); } j = await decryptWith(memKey, j); }
+    if (!Array.isArray(j.voy)) throw new Error("none");
+    HS.data = j; HS.err = "";
+  } catch (e) {
+    if (!HS.data) HS.err = e.message === "key" ? "" : e.message === "none"
+      ? (STATIC ? "아직 쌓인 이력이 없습니다" : "항차 이력은 게시된 사이트에서만 쌓입니다") : "이력 파일을 읽을 수 없습니다";
+  }
+  HS.loading = false; HS.at = retry ? 0 : Date.now();
+  histPaint();
+}
+function renderHist(pane) {
+  if (!HS.built) {
+    HS.built = true;
+    pane.innerHTML = `<div class="tf hs"><div class="head"><h2>항차 이력</h2><span class="m" id="hsMeta">항차별로 처음 예정에서 출항까지 바뀐 내용</span></div>
+      <form class="form" id="hsForm" autocomplete="off">
+        <div class="fld"><label for="hsQ">선명 · 항차 · 터미널</label><input id="hsQ" placeholder="예: PEGASUS TERA 또는 한진신항" autocomplete="off" spellcheck="false"></div>
+        <select class="sel" id="hsSort" aria-label="정렬"><option value="recent">최근 접안 순</option><option value="delay">지연 큰 순</option><option value="count">변경 많은 순</option></select>
+        <button type="button" class="clr" id="hsClr">지우기</button>
+      </form>
+      <div class="chips" id="hsChips"></div>
+      <div class="sum" id="hsSum"></div>
+      <div class="list" id="hsList"></div></div>`;
+    $("hsQ").value = new URLSearchParams(location.search).get("q") || "";
+    $("hsQ").oninput = histPaint;
+    $("hsForm").onsubmit = (ev) => ev.preventDefault();
+    $("hsSort").onchange = () => { HS.sort = $("hsSort").value; histPaint(); };
+    $("hsClr").onclick = () => { $("hsQ").value = ""; HS.term = ""; histPaint(); $("hsQ").focus(); };
+    $("hsChips").onclick = (e) => { const b = e.target.closest(".chip"); if (!b) return; HS.term = HS.term === b.dataset.t ? "" : b.dataset.t; histPaint(); };
+    $("hsList").onclick = (e) => {
+      if (e.target.closest(".tl")) return;
+      const r = e.target.closest(".vr"); if (!r) return;
+      HS.open.has(r.dataset.k) ? HS.open.delete(r.dataset.k) : HS.open.add(r.dataset.k);
+      histPaint();
+    };
+  }
+  if (!HS.loading && Date.now() - HS.at > 5 * 60e3) loadHist();     // 열어 둔 채로 있어도 5분마다 새로 읽는다
+  histPaint();
+}
+function histPaint() {
+  const box = $("hsList"); if (!box) return;
+  const sum = $("hsSum"), chips = $("hsChips");
+  if (!HS.data) {
+    chips.innerHTML = ""; sum.innerHTML = ""; box.style.display = "none";
+    sum.innerHTML = `<div class="hint" style="flex:1">${HS.err ? esc(HS.err) : "불러오는 중..."}</div>`;
+    return;
+  }
+  box.style.display = "";
+  const tm = (s) => { const d = parseDT(s); return d ? fmtDT(d) : "—"; };
+  const all = HS.data.voy.map(v => ({ ...v, d_eta: hsMin(v.eta0, v.eta), d_etd: hsMin(v.etd0, v.etd), n: (v.log || []).length }));
+  const since = parseDT(HS.data.since);
+  $("hsMeta").textContent = `항차별로 처음 예정에서 출항까지 바뀐 내용${since ? ` · ${since.getFullYear()}년 ${fmtDay(since)}부터 기록` : ""} · 400일 보관`;
+  const terms = TERMINAL_ORDER.filter(t => all.some(v => v.terminal === t)).concat([...new Set(all.map(v => v.terminal))].filter(t => !TERMINAL_ORDER.includes(t)));
+  if (HS.term && !terms.includes(HS.term)) HS.term = "";
+  chips.innerHTML = terms.map(t => `<button type="button" class="chip${t === HS.term ? " on" : ""}" data-t="${esc(t)}">${esc(t)} ${all.filter(v => v.terminal === t).length}</button>`).join("");
+  const words = $("hsQ").value.toUpperCase().split(/\s+/).filter(Boolean);
+  let list = all.filter(v => {
+    if (HS.term && v.terminal !== HS.term) return false;
+    const hay = [v.ship, v.voyage, v.terminal, v.route, v.line, v.region].join(" ").toUpperCase();
+    return words.every(w => hay.includes(w));
+  });
+  if (HS.sort === "delay") list.sort((a, b) => b.d_eta - a.d_eta);
+  else if (HS.sort === "count") list.sort((a, b) => b.n - a.n || b.d_eta - a.d_eta);
+  else list.sort((a, b) => (b.eta || "").localeCompare(a.eta || ""));
+  if (!list.length) {
+    sum.innerHTML = ""; box.innerHTML = `<div class="hint">${all.length ? "조건에 맞는 항차가 없습니다" : "아직 쌓인 이력이 없습니다"}</div>`;
+    return;
+  }
+  const late = list.filter(v => v.d_eta >= 1440).length, moved = list.filter(v => v.n).length;
+  const avg = Math.round(list.reduce((a, v) => a + v.d_eta, 0) / list.length);
+  sum.innerHTML = `<span><b>${fmtN(list.length)}</b>개 항차</span><span>일정이 바뀐 항차 <b>${fmtN(moved)}</b></span>
+    <span>접안 1일 이상 지연 <b>${fmtN(late)}</b></span><span>평균 접안 변동 <b>${hsDelay(avg)}</b></span><span>줄을 누르면 변경 내역이 펼쳐집니다</span>`;
+  const LIMIT = 150;
+  let h = `<div class="vh"><div>선명 · 항차</div><div>터미널</div><div>접안 (처음 예정 → 현재/최종)</div><div style="text-align:right">접안 변동</div><div style="text-align:right">변경</div><div>상태</div></div>`;
+  for (const v of list.slice(0, LIMIT)) {
+    const k = hsKey(v), open = HS.open.has(k), [sc, sl] = hsStatus(v);
+    h += `<div class="vr${open ? " open" : ""}" data-k="${esc(k)}">
+      <div class="nm"><b>${esc(v.ship)}</b>${v.voyage ? `<span>${esc(v.voyage)}</span>` : ""}</div>
+      <div class="tm" style="color:${REGION_COLOR[v.region] || C.text}">${esc(v.terminal)}${v.route ? `<small>${esc(v.route)}</small>` : ""}</div>
+      <div class="eta">${Math.abs(v.d_eta) < 10 ? `<b>${tm(v.eta)}</b>` : `<span>${tm(v.eta0)} →</span> <b>${tm(v.eta)}</b>`}</div>
+      <div class="dl ${hsCls(v.d_eta)}">${hsDelay(v.d_eta)}</div>
+      <div class="cnt">${v.n ? v.n + "회" : "—"}</div>
+      <div><span class="st ${sc}">${sl}</span></div></div>`;
+    if (!open) continue;
+    const startNote = v.first === HS.data.since ? "기록 시작 시점의 예정" : "처음 올라온 예정";
+    const steps = [[v.first, v.eta0, v.etd0, v.berth0, startNote]].concat((v.log || []).map(l => [l[0], l[1], l[2], l[3], ""]));
+    let rows = "";
+    steps.forEach((st, i) => {
+      const pv = steps[i - 1];
+      let note = st[4];
+      if (pv) {
+        const de = hsMin(pv[1], st[1]), dd = hsMin(pv[2], st[2]), p = [];
+        if (Math.abs(de) >= 10) p.push(`<span class="${hsCls(de)}">접안 ${hsDelay(de)}</span>`);
+        if (Math.abs(dd) >= 10) p.push(`<span class="${hsCls(dd)}">출항 ${hsDelay(dd)}</span>`);
+        if ((pv[3] || "") !== (st[3] || "")) p.push(`선석 ${esc(pv[3] || "—")} → ${esc(st[3] || "—")}`);
+        note = p.join(" · ");
+      }
+      rows += `<tr><td>${tm(st[0])}</td><td>${tm(st[1])}</td><td>${tm(st[2])}</td><td>${esc(st[3] || "—")}</td><td class="${pv ? "" : "nt"}">${note}</td></tr>`;
+    });
+    if (v.closed) rows += `<tr><td>${tm(v.closed)}</td><td colspan="3" class="nt">${v.end === "removed" ? "접안 전에 일정이 목록에서 빠졌습니다" : "터미널 목록에서 빠짐 (출항)"}</td><td></td></tr>`;
+    h += `<div class="tl"><div class="tot"><span>접안 <b class="${hsCls(v.d_eta)}">${hsDelay(v.d_eta)}</b></span><span>출항 <b class="${hsCls(v.d_etd)}">${hsDelay(v.d_etd)}</b></span>
+        <span>변경 <b>${v.n}</b>회</span>${v.line ? `<span>선사 <b>${esc(v.line)}</b></span>` : ""}</div>
+      <table><thead><tr><th>감지 시각</th><th>접안</th><th>출항</th><th>선석</th><th>직전 대비</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  if (list.length > LIMIT) h += `<div class="hint">${fmtN(list.length)}건 중 ${LIMIT}건만 표시했습니다. 선명이나 터미널로 좁혀 보세요</div>`;
+  const top = box.scrollTop; box.innerHTML = h; box.scrollTop = top;
+}
+
 // ===================== Basic Surcharge =====================
 // 자사 e-service(ebiz.pcsline.co.kr) [운임/요율 > 기본 부대비용 조회] 와 같은 조회. 브라우저에서 e-service 를 직접
 // 부를 수 없어(다른 사이트에서 오는 요청을 막아 둠) server.py 가 대신 받아 온다(/api/sur/...).
@@ -1731,7 +1897,7 @@ function tySideHTML(T, storms, goneN) {
 // ===================== 렌더 진입 =====================
 function renderPane() {
   for (const p of document.querySelectorAll(".pane")) p.classList.remove("on");
-  const paneKey = tab === "work" ? "work" : tab === "empty" ? "empty" : tab === "typhoon" ? "typhoon" : tab === "tariff" ? "tariff" : tab === "sur" ? "sur" : tab === "chg" ? "chg" : "gantt";
+  const paneKey = tab === "work" ? "work" : tab === "empty" ? "empty" : tab === "typhoon" ? "typhoon" : tab === "tariff" ? "tariff" : tab === "sur" ? "sur" : tab === "chg" ? "chg" : tab === "hist" ? "hist" : "gantt";
   const pane = $(paneKey + "Pane"); pane.classList.add("on");
   hideTip();
   if (paneKey === "gantt") renderGantt(pane, tab);
@@ -1740,6 +1906,7 @@ function renderPane() {
   else if (paneKey === "tariff") renderTariff(pane);
   else if (paneKey === "sur") renderSur(pane);
   else if (paneKey === "chg") renderChanges(pane);
+  else if (paneKey === "hist") renderHist(pane);
   else renderEmpty(pane);
 }
 // 환율 띠. 같은 묶음을 두 번 이어 붙이고 절반만큼 흘려 보내면 끊김 없이 돈다.
