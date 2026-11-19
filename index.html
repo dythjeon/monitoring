@@ -322,6 +322,117 @@ footer { color: #a3a8b8; }
 .gate::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(6,12,34,.38) 0%, rgba(6,12,34,.12) 45%, rgba(6,12,34,0) 75%); }
 .gate form { position: relative; z-index: 1; border: 0; border-radius: 16px; box-shadow: 0 30px 70px -20px rgba(0,0,0,.6); background: rgba(255,255,255,.96); }
 .gate .btn { background: var(--primary); color: #fff; }
+
+/* =====================================================================
+   반응형 (2026-11-19): 화면 폭에 따라 배치가 스스로 바뀐다.
+   테마 블록보다 뒤에 있어야 한다(같은 선택자를 테마가 덮어쓰기 때문).
+   ===================================================================== */
+/* ---- Basic Surcharge (틀은 Barge Tariff 의 .tf 를 같이 쓴다) ---- */
+.su .fld.sm { flex: 0 1 170px; }
+.su .fld.loc input { cursor: pointer; text-transform: none; background: var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23858b9a' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.6-3.6'/%3E%3C/svg%3E") right 11px center no-repeat; padding-right: 34px; text-overflow: ellipsis; }
+.su .fld input[type=date] { text-transform: none; min-height: 41px; }
+.su .types { display: flex; gap: 6px; flex-wrap: wrap; }
+.su .types label { cursor: pointer; }
+.su .types input { position: absolute; opacity: 0; pointer-events: none; }
+.su .types span { display: inline-block; border: 1px solid var(--table-line); border-radius: 8px; padding: 9px 14px; font-size: 13px; font-weight: 700; color: var(--muted); background: var(--card); }
+.su .types input:checked + span { background: var(--primary); border-color: var(--primary); color: #fff; }
+.su .types input:focus-visible + span { box-shadow: 0 0 0 3px var(--primary-soft); }
+.su .sec { display: flex; align-items: baseline; gap: 8px; margin: 20px 2px 8px; font-size: 14px; font-weight: 700; }
+.su .sec b { color: var(--primary); font-size: 16px; }
+.su .sec .m { font-weight: 500; }
+.su td.kn { font-weight: 600; }
+.su td.c, .su th.c { text-align: center; }
+.su .none { padding: 18px; text-align: center; color: var(--muted); font-size: 12.5px; }
+.su .notes { margin-top: 18px; color: var(--muted); font-size: 11.5px; line-height: 1.75; }
+/* Select Location 팝업 */
+.lp { position: fixed; inset: 0; z-index: 900; background: rgba(10,19,48,.5); display: none; align-items: center; justify-content: center; padding: 16px; }
+.lp.on { display: flex; }
+.lp .box { width: 100%; max-width: 640px; height: min(560px, 88vh); background: var(--card); border-radius: 16px; box-shadow: 0 30px 70px -20px rgba(0,0,0,.55); display: flex; flex-direction: column; overflow: hidden; }
+.lp .top { display: flex; align-items: center; padding: 16px 18px 10px; }
+.lp .top h3 { margin: 0; font-size: 17px; }
+.lp .x { margin-left: auto; border: 0; background: transparent; font-size: 26px; line-height: 1; color: var(--muted); cursor: pointer; padding: 2px 8px; border-radius: 8px; }
+.lp .x:hover { background: var(--bg); color: var(--text); }
+.lp .q { padding: 0 18px 14px; }
+.lp .q input { width: 100%; border: 1px solid var(--table-line); border-radius: 10px; padding: 11px 13px; font: inherit; font-size: 14px; outline: none; text-transform: uppercase; }
+.lp .q input::placeholder { text-transform: none; }
+.lp .q input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.lp .cols { flex: 1; min-height: 0; display: grid; grid-template-columns: 170px 1fr; border-top: 1px solid var(--border); }
+.lp .nat, .lp .loc { overflow: auto; padding: 6px; }
+.lp .nat { background: var(--bg); border-right: 1px solid var(--border); }
+.lp .cols button { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 9px 12px; border-radius: 8px; font: inherit; font-size: 13px; color: var(--text); cursor: pointer; }
+.lp .nat button.on { background: var(--primary); color: #fff; font-weight: 700; }
+.lp .nat button:not(.on):hover, .lp .loc button:hover { background: var(--primary-soft); }
+.lp .loc button.main { font-weight: 700; }
+.lp .loc .none { padding: 30px 12px; text-align: center; color: var(--muted); font-size: 13px; }
+@media (max-width: 760px) {
+  .su .fld.sm { flex-basis: 100%; }
+  .lp { padding: 10px; }
+  .lp .cols { grid-template-columns: 112px 1fr; }
+  .lp .cols button { padding: 10px 9px; font-size: 12.5px; }
+}
+
+.popover { white-space: pre-wrap; width: max-content; max-width: min(560px, calc(100vw - 32px)); }
+.status.open .popover { display: block; }
+.et-wrap { overflow-x: auto; }
+.pies { grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); }
+.tip { max-width: min(360px, calc(100vw - 16px)); }
+
+@media (max-width: 1100px) {            /* 태블릿·작은 노트북 */
+  .hd { padding: 16px 20px; }
+  main { padding: 18px 20px 16px; gap: 14px; }
+  .stat { padding: 12px 16px; flex-basis: 100px; min-width: 100px; }
+  .stat .v { font-size: 24px; }
+  .pie { gap: 24px; }
+}
+
+@media (max-width: 760px) {             /* 휴대폰 */
+  .hd { padding: 12px 14px; gap: 10px 12px; }
+  .hd > div:not(.right) { flex: 1; min-width: 0; }
+  .hd h1 { font-size: 17px; }
+  .hd .logo { height: 36px; }
+  .hd .sub { font-size: 11.5px; margin-top: 3px; }
+  .hd .right { margin-left: 0; width: 100%; flex-direction: row; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+  .hd .right > div:last-child { margin-left: auto; }
+  .status { font-size: 12px; min-width: 0; cursor: pointer; }
+  .popover { left: 0; right: auto; font-size: 11.5px; }
+  header .btn { padding: 8px 14px; }
+  main { padding: 12px 12px 14px; gap: 10px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stats .sep { display: none; }
+  .stat { min-width: 0; padding: 9px 12px; }
+  .stat .v { font-size: 21px; }
+  /* 탭 10개가 여러 줄로 쌓이지 않게 한 줄로 두고 좌우로 민다 */
+  .tabs { align-self: stretch; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: none; padding: 8px 13px; }
+  .card { padding: 8px; min-height: 340px; border-radius: 12px; }
+  .work { padding: 2px; }
+  .work .axis, .work .row { grid-template-columns: 92px 1fr 44px; }
+  .work .row .lb { font-size: 12px; padding-left: 4px; }
+  .work .pct { font-size: 13px; padding-right: 2px; }
+  .emp { padding: 4px 2px 8px; }
+  .emp .head { flex-wrap: wrap; padding: 0 6px; }
+  .emp .note { padding: 10px 6px 0; }
+  table.et th, table.et td { padding: 8px 7px; }
+  table.et th.gap, table.et td.gap { width: 8px; }
+  .share { padding: 18px 6px 0; }
+  .pies { padding: 20px 2px 6px; }
+  .pie { flex-direction: column; gap: 16px; padding: 16px 12px; }
+  .pie svg { width: 170px; height: 170px; }
+  .tf { padding: 4px 2px 8px; }
+  .tf .fld { max-width: none; flex-basis: 100%; }
+  .tf th, .tf td { padding: 8px 9px; }
+  .fx .it { padding: 9px 18px; }
+  .tip { white-space: pre-wrap; }
+  footer { padding: 0 12px 14px; }
+}
+
+@media (max-width: 480px) {             /* 폭이 좁은 휴대폰 */
+  .hd .sub { display: none; }
+  .hd h1 { font-size: 16px; }
+  .stat .lb { font-size: 11px; }
+  .stat .v { font-size: 19px; }
+}
 </style>
 </head>
 <body>
@@ -357,11 +468,19 @@ footer { color: #a3a8b8; }
     <div class="pane" data-pane="empty" id="emptyPane"></div>
     <div class="pane" data-pane="typhoon" id="typhoonPane"></div>
     <div class="pane" data-pane="tariff" id="tariffPane"></div>
+    <div class="pane" data-pane="sur" id="surPane"></div>
   </div>
 </main>
 <footer>BerthMonitor Web · 터미널 사이트에서 수집한 자료이며 실제 작업 일정과 다를 수 있습니다<div style="margin-top:6px;font-weight:600;letter-spacing:.04em">Powered by THJEON</div></footer>
 <div class="tip" id="tip"></div>
 <div class="toast" id="toast"></div>
+<div class="lp" id="locPop">
+  <div class="box" role="dialog" aria-label="Select Location">
+    <div class="top"><h3>Select Location</h3><button type="button" class="x" id="lpX" aria-label="닫기">×</button></div>
+    <div class="q"><input id="lpQ" placeholder="항구 이름 또는 코드 검색 (예: BUSAN, JPTYO)" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
+    <div class="cols"><div class="nat" id="lpNat"></div><div class="loc" id="lpLoc"></div></div>
+  </div>
+</div>
 <div class="gate" id="gate">
   <form id="gateForm" autocomplete="off">
     <img id="gateLogo" alt="동영해운">
@@ -383,9 +502,13 @@ const TERMINAL_REGION = { "신선대": "부산", "감만": "부산", "허치슨"
 const REGION_COLOR = { "부산": "#2f6fed", "인천": "#f5a524", "광양": "#12b886", "평택": "#7048e8", "군산": "#0ea5c6" };
 const COUNTRY_KEYS = ["일본", "중국"];
 const COUNTRY_COLOR = { "일본": "#e64980", "중국": "#7048e8", "동남아": "#00b8d4", "러시아": "#12b886" };
+// Basic Surcharge 탭(기본 부대비용 조회)은 2026-11-19 보류. 코드는 그대로 두고 탭만 숨긴다.
+// true 로 바꾸면 탭이 다시 보인다(build_static.py 의 SUR_ENABLED 도 같이). 요율 조회는 server.py 로 띄웠을 때만 된다.
+const SUR_ENABLED = false;
 const TAB_KEYS = ["전체", "부산", "인천", "광양", "평택", "군산"];
 const TABS = [["전체", "전체"], ["부산", "부산항"], ["인천", "인천항"], ["광양", "광양항"], ["평택", "평택항"], ["군산", "군산항"],
-              ["work", "본선작업현황"], ["empty", "Empty Stock"], ["typhoon", "Typhoon"], ["tariff", "Barge Tariff"]];
+              ["work", "본선작업현황"], ["empty", "Empty Stock"], ["typhoon", "Typhoon"], ["tariff", "Barge Tariff"],
+              ["sur", "Basic Surcharge"]].filter(t => t[0] !== "sur" || SUR_ENABLED);
 const EMPTY_GROUPS = [["DC", [["GP20", "20'"], ["GP40", "40'"], ["HQ40", "4H"]]],
                       ["OT", [["OT20", "20'"], ["OT40", "40'"]]],
                       ["FR", [["FL20", "20'"], ["FL40", "40'"]]],
@@ -450,6 +573,7 @@ function moveTip(ev) {
   let x = ev.clientX + 14, y = ev.clientY + 16;
   if (x + w > innerWidth - 8) x = ev.clientX - w - 14;
   if (y + h > innerHeight - 8) y = ev.clientY - h - 12;
+  x = Math.max(8, Math.min(x, innerWidth - w - 8)); y = Math.max(8, y);     // 좁은 화면에서 밖으로 나가지 않게
   tip.style.left = x + "px"; tip.style.top = y + "px";
 }
 function hideTip() { tip.style.display = "none"; }
@@ -462,12 +586,19 @@ const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<"
 
 // ===================== 헤더/통계/탭 =====================
 function buildTabs() {
-  const box = $("tabs"); box.innerHTML = "";
+  const box = $("tabs"); const sl = box.scrollLeft; box.innerHTML = "";
   for (const [key, label] of TABS) {
     const b = document.createElement("button");
     b.className = "tab" + (key === tab ? " on" : ""); b.textContent = label; b.dataset.key = key;
     b.onclick = () => { tab = key; sessionStorage.setItem("bm.tab", key); buildTabs(); renderPane(); };
     box.appendChild(b);
+  }
+  // 휴대폰에서는 탭이 한 줄 가로 스크롤이다: 밀어 둔 위치를 지키고, 선택된 탭이 가려져 있으면 보이게 한다
+  box.scrollLeft = sl;
+  const on = box.querySelector(".tab.on");
+  if (on && box.scrollWidth > box.clientWidth) {
+    if (on.offsetLeft < box.scrollLeft) box.scrollLeft = on.offsetLeft - 8;
+    else if (on.offsetLeft + on.offsetWidth > box.scrollLeft + box.clientWidth) box.scrollLeft = on.offsetLeft + on.offsetWidth - box.clientWidth + 8;
   }
 }
 
@@ -527,6 +658,7 @@ function renderNextChip() {
 
 // ===================== 간트 =====================
 function renderGantt(pane, key) {
+  const keepLeft = pane.scrollLeft;          // 다시 그려도(1분마다·자동 갱신) 좌우로 밀어 둔 위치를 지킨다
   pane.innerHTML = "";
   const now = new Date();
   const [ws, we] = ganttWindow();
@@ -564,16 +696,19 @@ function renderGantt(pane, key) {
   const totalUnits = cursor;
 
   // ---- 치수
-  const W = Math.max(pane.clientWidth, 860);
+  const narrow = pane.clientWidth < 700;                   // 휴대폰: 글자·여백을 줄이고 하루 폭을 고정해 좌우로 민다
   const H = Math.max(pane.clientHeight, 360);
-  const P = 12, G = 13, HOUR_ROW = 18, DATE_ROW = 26;      // DATE_ROW: 맨 위 날짜·요일 줄, 그 아래 HOUR_ROW: 시간 눈금
+  const P = narrow ? 6 : 12, G = narrow ? 8 : 13, HOUR_ROW = 18, DATE_ROW = 26;      // DATE_ROW: 맨 위 날짜·요일 줄, 그 아래 HOUR_ROW: 시간 눈금
+  const TERM_FS = narrow ? 12 : 14, BERTH_FS = narrow ? 11.5 : 13.5;
   const berthLabel = (b) => b == null ? "—" : `${b}선석`;
   // 탭을 바꿔도 표가 좌우로 움직이지 않게, 열 폭은 전체 자료(모든 터미널·선석) 기준으로 고정
   const allTerms = [...new Set([...TERMINAL_ORDER, ...S.data.map(d => d.terminal)])];
   const allBerths = [...new Set(S.data.filter(d => inWindow(d, ws, we)).map(d => d.berth))];
-  const termW = Math.max(0, ...allTerms.map(t => textW(t, 14, 700)));
-  const berthW = Math.max(textW("—", 13.5, 400), ...allBerths.map(b => textW(berthLabel(b), 13.5, 400)));
+  const termW = Math.max(0, ...allTerms.map(t => textW(t, TERM_FS, 700)));
+  const berthW = Math.max(textW("—", BERTH_FS, 400), ...allBerths.map(b => textW(berthLabel(b), BERTH_FS, 400)));
   const sep1 = P + termW + G / 2, sep2 = sep1 + G / 2 + berthW + G / 2;
+  // 좁은 화면에서 7일을 한 화면에 욱여넣으면 막대가 점이 된다. 하루 120px 을 지키고 넘치는 만큼 좌우로 민다.
+  const W = Math.max(pane.clientWidth, narrow ? Math.ceil(sep2 + WINDOW_DAYS * 120 + 14) : 860);
   const left = sep2, right = W - 14;       // 선석 열 구분선이 곧 00시 선
   // 구간 밖 다음 입항 안내 줄
   const shown = new Set(usable.map(d => d.terminal));
@@ -641,18 +776,25 @@ function renderGantt(pane, key) {
                   y2: y0 + (rowTop.get(k1) + laneCount.get(k1)) * unitH, empty: rows.slice(i, j).every(r => r.berth == null) });
     i = j;
   }
+  // 터미널·선석 열은 별도 svg(hdr)에 그려 왼쪽에 붙여 둔다. 표를 좌우로 밀어도 어느 선석인지 보이게.
+  const hdrW = Math.ceil(left) + 1;
+  const hdr = el("svg", { width: hdrW, height: svgH, viewBox: `0 0 ${hdrW} ${svgH}` });
+  hdr.appendChild(el("rect", { x: 0, y: 0, width: hdrW, height: dateBase + 4, fill: C.card }));
   if (groups.length) {
     const yTop = groups[0].y1, yBot = groups[groups.length - 1].y2;
-    for (const x of [sep1, sep2]) svg.appendChild(el("line", { x1: x, x2: x, y1: yTop, y2: yBot, stroke: C.tableLine }));
+    for (const x of [sep1, sep2]) hdr.appendChild(el("line", { x1: x, x2: x, y1: yTop, y2: yBot, stroke: C.tableLine }));
     const edges = new Set(groups.flatMap(g => [g.y1, g.y2]));
-    for (const y of edges) svg.appendChild(el("line", { x1: 0, x2: right, y1: y, y2: y, stroke: C.tableLine }));
+    for (const y of edges) {
+      svg.appendChild(el("line", { x1: left, x2: right, y1: y, y2: y, stroke: C.tableLine }));
+      hdr.appendChild(el("line", { x1: 0, x2: hdrW, y1: y, y2: y, stroke: C.tableLine }));
+    }
     for (const g of groups)
-      svg.appendChild(el("text", { x: sep1 / 2, y: (g.y1 + g.y2) / 2, "text-anchor": "middle", "dominant-baseline": "central",
-        "font-size": 14, "font-weight": g.empty ? 400 : 700, fill: g.empty ? C.muted : (REGION_COLOR[g.region] || C.text) }, g.term));
+      hdr.appendChild(el("text", { x: sep1 / 2, y: (g.y1 + g.y2) / 2, "text-anchor": "middle", "dominant-baseline": "central",
+        "font-size": TERM_FS, "font-weight": g.empty ? 400 : 700, fill: g.empty ? C.muted : (REGION_COLOR[g.region] || C.text) }, g.term));
     for (const r of rows) {
       const k = r.term + "\u0000" + r.berth;
-      svg.appendChild(el("text", { x: (sep1 + sep2) / 2, y: y0 + (rowTop.get(k) + laneCount.get(k) / 2) * unitH, "text-anchor": "middle",
-        "dominant-baseline": "central", "font-size": 13.5, fill: r.berth == null ? C.muted : C.text }, berthLabel(r.berth)));
+      hdr.appendChild(el("text", { x: (sep1 + sep2) / 2, y: y0 + (rowTop.get(k) + laneCount.get(k) / 2) * unitH, "text-anchor": "middle",
+        "dominant-baseline": "central", "font-size": BERTH_FS, fill: r.berth == null ? C.muted : C.text }, berthLabel(r.berth)));
     }
   }
 
@@ -711,14 +853,24 @@ function renderGantt(pane, key) {
   if (picks.length) {
     const parts = picks.slice(0, 2).map(d => `${d.terminal} ${d.eta.getMonth() + 1}/${d.eta.getDate()} ${d.ship_name}`);
     if (picks.length > 2) parts.push(`외 ${picks.length - 2}곳`);
-    svg.appendChild(el("text", { x: right, y: svgH - 27, "text-anchor": "end", "font-size": 12, fill: C.muted }, "구간 밖 다음 입항  ·  " + parts.join("  ·  ")));
+    svg.appendChild(el("text", { x: narrow ? left + 6 : right, y: svgH - 27, "text-anchor": narrow ? "start" : "end", "font-size": 12, fill: C.muted }, "구간 밖 다음 입항  ·  " + parts.join("  ·  ")));
   }
 
-  const note = W < 900 ? "막대 길이 = 작업시간 · 좁은 막대는 선명이 줄여 표시됩니다"
+  const note = narrow ? "좌우로 밀어 날짜 이동 · 막대를 누르면 선명·항차·작업시간"
+    : W < 900 ? "막대 길이 = 작업시간 · 좁은 막대는 선명이 줄여 표시됩니다"
     : "막대 길이는 작업시간에 비례합니다 · 작업시간이 짧아 막대가 좁으면 선명이 ‘…’로 줄어 보이며, 막대에 마우스를 올리면 전체 선명·항차·작업시간을 볼 수 있습니다";
-  svg.appendChild(el("text", { x: right, y: svgH - 7, "text-anchor": "end", "font-size": 11.5, fill: C.muted }, note));
+  svg.appendChild(el("text", { x: narrow ? left + 6 : right, y: svgH - 7, "text-anchor": narrow ? "start" : "end", "font-size": 11.5, fill: C.muted }, note));
 
-  pane.appendChild(svg);
+  // 왼쪽 열(hdr)은 sticky 로 붙이고, 본 표는 그 밑으로 겹쳐 깐다(음수 여백). 넓은 화면에서는 예전과 똑같이 보인다.
+  const wrap = document.createElement("div");
+  wrap.style.cssText = `display:flex;align-items:flex-start;flex:none;min-width:${W}px`;
+  const stick = document.createElement("div");
+  stick.style.cssText = `position:sticky;left:0;z-index:2;flex:none;width:${hdrW}px;height:${svgH}px;pointer-events:none`;
+  stick.appendChild(hdr);
+  svg.style.flex = "none"; svg.style.marginLeft = -hdrW + "px";
+  wrap.append(stick, svg);
+  pane.appendChild(wrap);
+  pane.scrollLeft = keepLeft;
   if (!usable.length && S.updated_at) {
     const m = document.createElement("div"); m.className = "empty-msg"; m.textContent = "이 기간에 예정된 선박이 없습니다"; pane.appendChild(m);
   }
@@ -742,11 +894,15 @@ function renderWork(pane) {
   for (const d of rows) {
     const pct = Math.max(0, Math.min(100, +d.progress || 0));
     const planned = d.status === "접안예정";
-    const color = planned ? "#9aa3b2" : progressColor(pct), inside = pct >= 18;
+    // 휴대폰은 막대가 짧아 선명이 채움 칸에 다 안 들어간다: 30% 미만은 칸 밖, 70% 이상은 칸 안,
+    // 그 사이(주황)는 왼쪽 끝에 어두운 글자로 걸쳐 쓴다.
+    const slim = pane.clientWidth < 560;
+    const color = planned ? "#9aa3b2" : progressColor(pct), inside = pct >= (slim ? 70 : 18);
+    const over = slim && !inside && pct >= 30;
     const row = document.createElement("div"); row.className = "row";
     row.innerHTML = `<div class="lb">${esc(d.terminal)} ${esc(d.berth)}선석</div>
       <div class="track">${pct > 0 ? `<div class="fill" style="width:${pct}%;background:${color}"></div>` : ""}
-        <div class="txt" style="${inside ? `left:${pct / 2}%;transform:translate(-50%,-50%);color:#fff` : `left:calc(${pct}% + 8px);color:${C.text}`}">
+        <div class="txt" style="${inside ? `left:${pct / 2}%;transform:translate(-50%,-50%);color:#fff` : over ? `left:8px;color:${C.text}` : `left:calc(${pct}% + 8px);color:${C.text}`}">
           <div class="n">${esc(d.ship_name)}(${esc(d.line || "")})</div>${d.voyage || d.status ? `<div class="vy" style="${inside ? "" : "color:" + C.muted}">${d.status ? esc(d.status) + " · " : ""}${esc(d.voyage || "")}</div>` : ""}</div>
       </div>
       <div class="pct" style="color:${color}">${planned ? "대기" : pct + "%"}</div>`;
@@ -775,7 +931,7 @@ function renderEmpty(pane) {
   const gcls = (i, n) => "gc" + (i === 0 ? " gl" : "") + (i === n - 1 ? " gr" : "");   // 그룹 안 위치별 테두리
 
   let h = `<div class="emp"><div class="head"><h2>국내 공컨 재고</h2><span class="m">선사코드 DYS · ${rows.length}개 터미널</span>
-    <span class="tot">총 재고 <b>${fmtN(totalAll)}</b> 개</span></div><table class="et"><thead><tr><th class="lb" rowspan="2">구분</th>`;
+    <span class="tot">총 재고 <b>${fmtN(totalAll)}</b> 개</span></div><div class="et-wrap"><table class="et"><thead><tr><th class="lb" rowspan="2">구분</th>`;
   for (const [g, cols] of EMPTY_GROUPS) h += `<th class="g" colspan="${cols.length}"><span>${g}</span></th><th class="gap" rowspan="2"></th>`;
   h += `<th rowspan="2" style="color:var(--text)">합계</th></tr><tr>`;
   for (const [, cols] of EMPTY_GROUPS) cols.forEach(([, sub], i) => { h += `<th class="${gcls(i, cols.length)}">${sub}</th>`; });
@@ -788,7 +944,7 @@ function renderEmpty(pane) {
   }
   h += `</tbody><tfoot><tr><td class="lb">합계</td>`;
   for (const [, cols] of EMPTY_GROUPS) { cols.forEach(([k], i) => { h += val(cellTotal(k), gcls(i, cols.length)); }); h += `<td class="gap"></td>`; }
-  h += val(totalAll, "tot") + `</tr></tfoot></table>`;
+  h += val(totalAll, "tot") + `</tr></tfoot></table></div>`;
   h += `<div class="note">RF(냉동)는 광양서부·선광신항·PCTC·GCT만 타입별 재고를 제공합니다 · 신선대/감만의 FR은 플랫랙 · E1CT/한진신항은 GP/HQ만 제공 · PCTC/GCT는 Damage 제외(Sound만) · 선광신항/광양국제는 반출 가능 개수</div>`;
   // 터미널별 비중: 재고가 많은(비중이 높은) 터미널부터. 표는 터미널 고정 순서 그대로 둔다.
   const tot = (c, t) => (get(c, t) || {}).total || 0;
@@ -1031,6 +1187,151 @@ function tariffSearch() {
   sum.innerHTML = `<span><b>${fmtN(total)}</b>건</span>${total > LIMIT ? `<span>앞 ${LIMIT}건만 표시 · 도착지를 더 입력해 좁혀 보세요</span>` : ""}
     <span>도착지별로 20' Round 가 싼 순서 · 한쪽 요율이 없으면(N/A) Round 는 –</span>`;
   out.innerHTML = h;
+}
+
+// ===================== Basic Surcharge =====================
+// 자사 e-service(ebiz.pcsline.co.kr) [운임/요율 > 기본 부대비용 조회] 와 같은 조회. 브라우저에서 e-service 를 직접
+// 부를 수 없어(다른 사이트에서 오는 요청을 막아 둠) server.py 가 대신 받아 온다(/api/sur/...).
+// 그래서 서버 없이 올라간 정적 사이트(GitHub Pages)에서는 지역 팝업까지만 되고 요율 조회는 안 된다.
+const SU = { built: false, locs: null, loading: null, err: "", v: { por: null, pol: null, pod: null, pvy: null } };   // v.x = [코드, "BUSAN, KOREA (KRPUS)"]
+const SU_TYPES = [["D", "DC", "dc"], ["R", "RF", "rf"], ["O", "OT", "ot"], ["F", "FR", "of"], ["T", "TC", "tc"], ["G", "DG", "dg"]];   // [값, 표기, 응답 열 접두어]
+const SU_MAIN = new Set(["KRPUS", "KRINC", "KRKAN", "JPTYO", "JPYOK", "JPNGO", "JPOSA", "JPUKB", "JPSMZ", "CNSHA", "CNNGB", "CNNSA", "CNTXG",
+  "CNDLC", "CNTAO", "CNNKG", "CNZJG", "CNLYG", "CNYNT", "CNSHK", "CNHUA", "CNXMN", "CNTAG", "CNNTG", "VNHPH", "VNSGN", "THLCH", "THBKK",
+  "MYPKG", "IDJKT", "IDSUB", "MNULN", "MNDZU", "RUVVO", "RUVCT", "RUVFP"]);       // e-service 팝업에서 굵게 보이는 주요 항
+const SU_FIELDS = [["por", "POR"], ["pol", "POL"], ["pod", "POD"], ["pvy", "PVY"]];
+const SU_HINT = `<div class="hint">Date · POR · POL · POD · PVY 를 고르고 <b>Inquiry</b> 를 누르세요<br>입력란을 누르면 Select Location 창이 열립니다 · POR 을 고르면 POL 이, POD 를 고르면 PVY 가 같이 채워집니다</div>`;
+
+function suLoadLocs() {
+  if (SU.locs) return Promise.resolve(SU.locs);
+  if (STATIC) {
+    SU.locs = S.sur_locs || null;
+    if (!SU.locs) SU.err = "지역 목록이 아직 올라오지 않았습니다";
+    return Promise.resolve(SU.locs);
+  }
+  if (SU.loading) return SU.loading;
+  SU.loading = fetch("/api/sur/locations").then(r => r.json()).then(j => { if (!j.locs) throw 0; SU.locs = j; return j; })
+    .catch(() => { SU.err = "지역 목록을 불러오지 못했습니다 (e-service 연결을 확인해 주세요)"; return null; })
+    .finally(() => { SU.loading = null; });
+  return SU.loading;
+}
+function suSet(field, val) {
+  SU.v[field] = val;
+  const inp = $("su_" + field); if (inp) inp.value = val ? val[1] : "";
+}
+function suClosePop() { $("locPop").classList.remove("on"); }
+// Select Location 팝업. e-service 와 같은 규칙: PVY 는 POD 와 같은 나라만(POD 가 홍콩이면 중국·홍콩).
+async function suPick(field) {
+  const L = await suLoadLocs();
+  if (!L) { toast(SU.err); return; }
+  let nats = L.nations, locs = L.locs;
+  if (field === "pvy" && SU.v.pod) {
+    const allow = SU.v.pod[0] === "HKHKG" ? ["CN", "HK"] : [SU.v.pod[0].slice(0, 2)];
+    nats = nats.filter(n => allow.includes(n[0])); locs = locs.filter(l => allow.includes(l[2]));
+  }
+  let nat = "";
+  const qEl = $("lpQ"), natEl = $("lpNat"), locEl = $("lpLoc");
+  const paint = () => {
+    const q = qEl.value.trim().toUpperCase();
+    const list = locs.filter(l => q ? l[1].toUpperCase().includes(q) : (!nat || l[2] === nat));
+    natEl.innerHTML = `<button type="button" data-n="" class="${!q && !nat ? "on" : ""}">ALL</button>` +
+      nats.map(n => `<button type="button" data-n="${esc(n[0])}" class="${!q && nat === n[0] ? "on" : ""}">${esc(n[1])}</button>`).join("");
+    locEl.innerHTML = list.length
+      ? list.map(l => `<button type="button" data-c="${esc(l[0])}" class="${SU_MAIN.has(l[0]) ? "main" : ""}">${esc(l[1])}</button>`).join("")
+      : `<div class="none">검색 결과가 없습니다</div>`;
+    locEl.scrollTop = 0;
+  };
+  const choose = (code) => {
+    const l = L.locs.find(x => x[0] === code); if (!l) return;
+    const val = [l[0], l[1]];
+    suSet(field, val);
+    if (field === "por" && !SU.v.pol) suSet("pol", val);
+    if (field === "pod") suSet("pvy", val);
+    suClosePop();
+  };
+  natEl.onclick = (e) => { const b = e.target.closest("button"); if (!b) return; nat = b.dataset.n; qEl.value = ""; paint(); };
+  locEl.onclick = (e) => { const b = e.target.closest("button"); if (b) choose(b.dataset.c); };
+  qEl.oninput = paint;
+  qEl.onkeydown = (e) => {
+    if (e.key === "Escape") suClosePop();
+    else if (e.key === "Enter") { const b = locEl.querySelectorAll("button"); if (b.length === 1) choose(b[0].dataset.c); }
+  };
+  $("lpX").onclick = suClosePop;
+  $("locPop").onclick = (e) => { if (e.target === $("locPop")) suClosePop(); };      // 바깥(어두운 곳)을 누르면 닫힘
+  qEl.value = ""; paint();
+  $("locPop").classList.add("on");
+  if (!TOUCH) qEl.focus();            // 휴대폰은 자판이 목록을 가리므로 자동으로 띄우지 않는다
+}
+function renderSur(pane) {
+  if (SU.built) return;
+  SU.built = true;
+  const t = new Date(), today = `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}`;
+  pane.innerHTML = `<div class="tf su"><div class="head"><h2>Basic Surcharge</h2><span class="m">DY e-service 기본 부대비용 조회와 같은 자료</span></div>
+    <form class="form" id="suForm" autocomplete="off">
+      <div class="fld sm"><label for="suDate">Date</label><input type="date" id="suDate" value="${today}"></div>
+      ${SU_FIELDS.map(([k, lb]) => `<div class="fld loc"><label for="su_${k}">${lb}</label><input id="su_${k}" readonly placeholder="눌러서 선택"></div>`).join("")}
+      <div class="fld" style="flex:0 1 auto;max-width:none"><label>Type</label><div class="types">${SU_TYPES.map(([v, lb], i) =>
+        `<label><input type="radio" name="suType" value="${v}"${i ? "" : " checked"}><span>${lb}</span></label>`).join("")}</div></div>
+      <button type="submit" class="btn" id="suGo">Inquiry</button>
+      <button type="button" class="clr" id="suClr">지우기</button>
+    </form>
+    <div id="suOut">${SU_HINT}</div>
+    <div class="notes">*선적지/양하지에 상기에 기재 되지 않은 비용들이 추가/변경 될 수 있습니다.<br>*POD가 홍콩인 경우에는, PVY가 중국인 경우만 검색 가능<br>*DG화물, OOG 화물 및 일부 항구의 경우, 터미널과 계약관계로 상기 비용과 다를수가 있으니, 도착지 수입 담당자에게 문의하여 주시길 바랍니다.</div></div>`;
+  for (const [k] of SU_FIELDS) {
+    $("su_" + k).onclick = () => suPick(k);
+    $("su_" + k).onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); suPick(k); } };
+  }
+  $("suForm").onsubmit = (e) => { e.preventDefault(); suInquiry(); };
+  $("suClr").onclick = () => { for (const [k] of SU_FIELDS) suSet(k, null); $("suOut").innerHTML = SU_HINT; };
+  suLoadLocs();          // 팝업이 바로 뜨게 미리 읽어 둔다
+}
+async function suInquiry() {
+  const out = $("suOut"), btn = $("suGo"), v = SU.v;
+  const date = $("suDate").value.replace(/-/g, "");
+  const miss = [["Date", date.length === 8], ...SU_FIELDS.map(([k, lb]) => [lb, v[k]])].filter(x => !x[1]).map(x => x[0]);
+  if (miss.length) { toast(miss.join(" · ") + " 을(를) 입력해 주세요"); return; }
+  const type = document.querySelector('input[name="suType"]:checked').value;
+  if (STATIC) {
+    out.innerHTML = `<div class="hint">이 주소(서버 없이 올라간 사이트)에서는 요율 조회가 되지 않습니다<br>e-service 가 다른 사이트에서 오는 조회를 막고 있어, PC 에서 실행한 DY OPS BOARD(run_web.bat)로 접속해야 조회됩니다</div>`;
+    return;
+  }
+  btn.disabled = true; out.innerHTML = `<div class="hint">조회 중...</div>`;
+  try {
+    const qs = new URLSearchParams({ date, type, por: v.por[0], pol: v.pol[0], pod: v.pod[0], pvy: v.pvy[0] });
+    const r = await fetch("/api/sur/list?" + qs, { cache: "no-store" });
+    const j = await r.json();
+    if (!r.ok || j.error) throw j.error || "조회에 실패했습니다";
+    suRender(j, type, v.pol[0], v.pod[0]);
+  } catch (e) {
+    out.innerHTML = `<div class="hint">${esc(typeof e === "string" ? e : "서버에 연결할 수 없습니다")}</div>`;
+  }
+  btn.disabled = false;
+}
+// 조회 결과를 Prepaid / Collect 로 나눈다. e-service 화면(UIE0825)의 처리와 같다:
+//  - col1: 고른 타입의 20/40/HC 와 B/L 금액 합이 0 보다 큰 줄만, "0" 은 빈칸으로
+//  - col2(WHARFAGE 등): 타입 없이 그대로
+//  - 일본 주요항 → 중국 양쯔강 4개 항 구간은 Prepaid LSS 를 보이지 않는다
+function suRender(j, type, pol, pod) {
+  const [, label, pre] = SU_TYPES.find(t => t[0] === type);
+  const n = (s) => Number(s) || 0, z = (s) => (s == null || s === "0") ? "" : s;
+  let P = [], Cc = [];
+  for (const x of j.col1 || []) {
+    if (n(x[pre + "20"]) + n(x[pre + "40"]) + n(x[pre + "4h"]) + n(x.wfglc) <= 0) continue;
+    (x.surpcg === "P" ? P : Cc).push({ knd: x.surknd, cod: x.surcod, cur: x.wfgcur, ct: label,
+      a20: z(x[pre + "20"]), a40: z(x[pre + "40"]), a4h: z(x[pre + "4h"]), lc: z(x.wfglc) });
+  }
+  for (const x of j.col2 || [])
+    (x.surpcg === "P" ? P : Cc).push({ knd: x.surknd, cod: x.surcod, cur: x.wfgcur, ct: "", a20: x.wfg20 || "", a40: x.wfg40 || "", a4h: x.wfg4h || "", lc: "" });
+  if (["JPTYO", "JPYOK", "JPNGO", "JPUKB", "JPOSA", "JPMOJ", "JPHKT"].includes(pol) && ["CNWUH", "CNTAG", "CNNKG", "CNZJG"].includes(pod))
+    P = P.filter(r => r.cod !== "LSS");
+  const amt = (s) => s === "" || s == null ? "" : (isNaN(+s) ? esc(s) : (+s).toLocaleString("ko-KR", { maximumFractionDigits: 2 }));
+  const table = (rows) => `<div class="wrap"><table><thead><tr><th>Kind</th><th>Code</th><th class="c">Currency</th><th class="c">Container Type</th>
+      <th class="r">20</th><th class="r">40</th><th class="r">HC</th><th class="r">B/L</th></tr></thead><tbody>` +
+    (rows.length ? rows.map(r => `<tr><td class="kn">${esc(r.knd)}</td><td>${esc(r.cod)}</td><td class="c">${esc(r.cur)}</td><td class="c">${esc(r.ct)}</td>
+      <td class="r">${amt(r.a20)}</td><td class="r">${amt(r.a40)}</td><td class="r">${amt(r.a4h)}</td><td class="r">${amt(r.lc)}</td></tr>`).join("")
+      : `<tr><td colspan="8" class="none">해당 요율이 없습니다</td></tr>`) + `</tbody></table></div>`;
+  const v = SU.v, route = `${v.por[0]} → ${v.pol[0]} → ${v.pod[0]} → ${v.pvy[0]} · ${label} · ${$("suDate").value}`;
+  $("suOut").innerHTML = `<div class="sec">Prepaid <b>${P.length}</b><span class="m">${esc(route)}</span></div>${table(P)}
+    <div class="sec">Collect <b>${Cc.length}</b></div>${table(Cc)}`;
 }
 
 // ===================== 태풍 모니터링 =====================
@@ -1277,13 +1578,14 @@ function tySideHTML(T, storms, goneN) {
 // ===================== 렌더 진입 =====================
 function renderPane() {
   for (const p of document.querySelectorAll(".pane")) p.classList.remove("on");
-  const paneKey = tab === "work" ? "work" : tab === "empty" ? "empty" : tab === "typhoon" ? "typhoon" : tab === "tariff" ? "tariff" : "gantt";
+  const paneKey = tab === "work" ? "work" : tab === "empty" ? "empty" : tab === "typhoon" ? "typhoon" : tab === "tariff" ? "tariff" : tab === "sur" ? "sur" : "gantt";
   const pane = $(paneKey + "Pane"); pane.classList.add("on");
   hideTip();
   if (paneKey === "gantt") renderGantt(pane, tab);
   else if (paneKey === "work") renderWork(pane);
   else if (paneKey === "typhoon") renderTyphoon(pane);
   else if (paneKey === "tariff") renderTariff(pane);
+  else if (paneKey === "sur") renderSur(pane);
   else renderEmpty(pane);
 }
 // 환율 띠. 같은 묶음을 두 번 이어 붙이고 절반만큼 흘려 보내면 끊김 없이 돈다.
@@ -1426,15 +1728,27 @@ $("refreshBtn").onclick = async () => {
 };
 
 let resizeT;
-addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(renderPane, 200); });
+// 휴대폰은 스크롤할 때 주소창이 접히면서 높이만 바뀌는 resize 가 계속 온다. 그때마다 다시 그리면
+// 화면이 깜빡이고 입력 중인 내용이 날아가므로, 터치 기기에서는 폭이 바뀔 때(회전 등)만 다시 그린다.
+const TOUCH = matchMedia("(pointer: coarse)").matches;
+let lastW = innerWidth;
+const widthSame = () => { if (TOUCH && innerWidth === lastW) return true; lastW = innerWidth; return false; };
+addEventListener("resize", () => { if (widthSame()) return; clearTimeout(resizeT); resizeT = setTimeout(renderPane, 200); });
 // 카드 크기가 바뀌면(창 크기·줌·글꼴 로딩 등) 간트를 다시 그린다. 막대 두께와 말줄임이 픽셀 기준이라서.
-let lastCardH = 0;
+let lastCardH = 0, lastCardW = 0;
 new ResizeObserver(() => {
-  const h = $("card").clientHeight;
-  if (Math.abs(h - lastCardH) < 2) return;
-  lastCardH = h; clearTimeout(resizeT); resizeT = setTimeout(renderPane, 150);
+  const h = $("card").clientHeight, w = $("card").clientWidth;
+  if (Math.abs(h - lastCardH) < 2 && w === lastCardW) return;
+  const onlyH = w === lastCardW && lastCardH > 0;
+  lastCardH = h; lastCardW = w;
+  if (TOUCH && onlyH) return;
+  clearTimeout(resizeT); resizeT = setTimeout(renderPane, 150);
 }).observe($("card"));
-setInterval(() => { renderNextChip(); if (tab !== "work" && tab !== "empty" && tab !== "typhoon" && tab !== "tariff") renderPane(); }, 60000);   // 현재 시각선 1분마다
+// 터치 화면: 상태 줄을 누르면 소스별 내역이 열리고(마우스는 올리기만 해도 열림), 다른 곳을 누르면 닫힌다.
+$("status").addEventListener("click", (e) => { e.stopPropagation(); $("status").classList.toggle("open"); });
+document.addEventListener("click", () => $("status").classList.remove("open"));
+addEventListener("touchstart", hideTip, { passive: true });      // 다른 곳을 건드리면 열려 있던 툴팁을 닫는다
+setInterval(() => { renderNextChip(); if (tab !== "work" && tab !== "empty" && tab !== "typhoon" && tab !== "tariff" && tab !== "sur") renderPane(); }, 60000);   // 현재 시각선 1분마다
 setInterval(loadData, STATIC ? 60000 : 180000);                                                                           // SSE 가 끊겨도 3분마다 보정
 document.addEventListener("visibilitychange", () => { if (!document.hidden) loadData(); });
 

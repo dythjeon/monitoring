@@ -20,8 +20,10 @@ sys.path.insert(0, HERE)
 
 from server import collect, REFRESH_SEC          # noqa: E402  (server import 는 부작용 없음)
 from scraper import SOURCES                      # noqa: E402
+from surcharge import fetch_locations            # noqa: E402
 
 OUT = os.path.join(HERE, "site")
+SUR_ENABLED = False      # Basic Surcharge 탭 보류(2026-11-19). index.html 의 SUR_ENABLED 와 같이 켠다.
 
 # 비밀번호 잠금. 환경변수 SITE_PASSWORD (GitHub 저장소 Secret) 가 있으면 data.json 을 AES-GCM 으로
 # 암호화해서 올린다. 저장소와 사이트가 공개여도 비밀번호 없이는 내용을 읽을 수 없다.
@@ -42,6 +44,12 @@ def encrypt_payload(payload, password):
 
 def main():
     rows, work, empty, errors, stats, typhoons, fx = collect()
+    sur_locs = None
+    if SUR_ENABLED:                       # Basic Surcharge 탭의 Select Location 목록
+        try:
+            sur_locs = fetch_locations()
+        except Exception as e:
+            errors = list(errors) + [f"부대비용 지역목록: {e}"]
 
     now = datetime.now()
     payload = {
@@ -49,7 +57,7 @@ def main():
         "updated_at": now.strftime("%Y-%m-%d %H:%M:%S"),
         "fetching": False,
         "data": rows, "work": work, "empty": empty,
-        "errors": errors, "stats": stats, "typhoons": typhoons, "fx": fx,
+        "errors": errors, "stats": stats, "typhoons": typhoons, "fx": fx, "sur_locs": sur_locs,
         "refresh_sec": int(os.environ.get("BERTH_STATIC_REFRESH_SEC", "1800")),   # 아티팩트 재게시 주기(30분)
         "server_now": now.strftime("%Y-%m-%dT%H:%M:%S"),
         "sources": [name for name, _fn in SOURCES],

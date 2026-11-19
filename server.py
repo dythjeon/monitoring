@@ -23,7 +23,7 @@ import time
 import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 from scraper import (SOURCES, fetch_all, fetch_bptc_work_status, fetch_hjit_work_status, fetch_bptc_empty_status,
                      fetch_gwct_empty_status, fetch_e1ct_empty_status, fetch_hjit_empty_status,
@@ -32,6 +32,7 @@ from scraper import (SOURCES, fetch_all, fetch_bptc_work_status, fetch_hjit_work
 import re
 from typhoon import fetch_typhoons
 from fx import fetch_fx
+from surcharge import fetch_locations, fetch_surcharge
 
 try:                                   # 한글 콘솔 출력 깨짐 방지
     sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
@@ -87,6 +88,17 @@ WAKE = threading.Event()           # 수동 새로고침 요청이 오면 깨운
 LISTENERS = set()                  # SSE 구독자 큐
 LISTENERS_LOCK = threading.Lock()
 LAST_FETCH_STARTED = 0.0
+
+
+# Basic Surcharge 탭의 Select Location 목록. 거의 안 바뀌므로 12시간에 한 번만 e-service 에서 받는다.
+_SUR_LOCS = {"at": 0.0, "data": None}
+
+
+def sur_locations():
+    if _SUR_LOCS["data"] is None or time.time() - _SUR_LOCS["at"] > 12 * 3600:
+        _SUR_LOCS["data"] = fetch_locations()
+        _SUR_LOCS["at"] = time.time()
+    return _SUR_LOCS["data"]
 
 
 def _notify(event):
@@ -237,6 +249,20 @@ class Handler(BaseHTTPRequestHandler):
                                server_now=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
                                sources=[name for name, _fn in SOURCES])
             self._json(payload)
+        elif path == "/api/sur/locations":
+            try:
+                self._json(sur_locations())
+            except Exception as e:
+                self._json({"error": f"e-service 지역 목록 조회 실패: {e}"}, 502)
+        elif path == "/api/sur/list":
+            q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+            try:
+                self._json(fetch_surcharge(q.get("date"), q.get("por"), q.get("pol"), q.get("pod"), q.get("pvy"),
+                                           q.get("type") or "D"))
+            except ValueError as e:
+                self._json({"error": str(e)}, 400)
+            except Exception as e:
+                self._json({"error": f"e-service 조회 실패: {e}"}, 502)
         elif path == "/api/events":
             self._sse()
         elif path == "/healthz":
