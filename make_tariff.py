@@ -24,7 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FEEDER_DIR = r"C:\Users\thjeon\Desktop\회사\FEEDER"
 HK_XLSX = os.path.join(FEEDER_DIR, "BARGE RATE 20251201  by Barge company-DYS.xlsx")
 CN_XLSX = os.path.join(FEEDER_DIR, "China Inland Port Cost 2024-re.xlsx")
-LIVE_DATA_URL = "https://dythjeon.github.io/monitoring/data.json"
+LIVE_DATA_URL = "https://dythjeon.github.io/opsboard/data.json"
 
 # 출발지(환적항). 검색창에서 코드나 이름 어느 쪽으로 쳐도 찾게 별칭을 같이 내려보낸다.
 ORIGINS = {

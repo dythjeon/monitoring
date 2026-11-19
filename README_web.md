@@ -67,11 +67,11 @@ GitHub Actions 가 5분마다 `build_static.py` 를 돌려 `site/data.json` 을 
 서버가 없으므로 실시간 푸시/수동조회 버튼은 없고, 화면은 `./data.json` 을 읽는 정적 모드로 동작한다.
 
 최초 1회:
-1. https://github.com/new → 이름 `monitoring`, **Public**, 나머지 체크 해제 → Create
+1. https://github.com/new → 이름 `opsboard`, **Public**, 나머지 체크 해제 → Create
 2. 이 폴더에서 `publish_github.bat` 실행 (저장소 주소 입력) → 처음엔 브라우저 로그인 창
 3. 저장소 → Settings → Pages → Source 를 **GitHub Actions** 로
 4. Actions 탭 → "선석현황 수집·게시" → Run workflow. 2~3분 뒤 주소 생성:
-   `https://<아이디>.github.io/monitoring/`
+   `https://<아이디>.github.io/opsboard/`
 
 이후 scraper.py / index.html 을 고치면 `publish_github.bat` 만 다시 실행하면 된다.
 주의: 60일간 커밋이 없으면 GitHub 이 예약 실행을 멈춘다(Actions 탭에서 다시 켤 수 있음).
