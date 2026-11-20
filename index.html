@@ -630,7 +630,7 @@ const COUNTRY_COLOR = { "일본": "#e64980", "중국": "#7048e8", "동남아": "
 const SUR_ENABLED = false;
 const TAB_KEYS = ["전체", "부산", "인천", "광양", "평택", "군산"];
 const TABS = [["전체", "전체"], ["부산", "부산항"], ["인천", "인천항"], ["광양", "광양항"], ["평택", "평택항"], ["군산", "군산항"],
-              ["work", "본선작업현황"], ["chg", "스케줄 변경"], ["hist", "항차 이력"], ["empty", "Empty Stock"], ["typhoon", "Typhoon"], ["tariff", "Barge Tariff"],
+              ["work", "본선작업현황"], ["chg", "접안변경이력"], ["hist", "항차별변경이력"], ["empty", "Empty Stock"], ["typhoon", "Typhoon"], ["tariff", "Barge Tariff"],
               ["sur", "Basic Surcharge"]].filter(t => t[0] !== "sur" || SUR_ENABLED);
 const EMPTY_GROUPS = [["DC", [["GP20", "20'"], ["GP40", "40'"], ["HQ40", "4H"]]],
                       ["OT", [["OT20", "20'"], ["OT40", "40'"]]],
@@ -840,14 +840,6 @@ function buildTabs() {
   for (const [key, label] of TABS) {
     const b = document.createElement("button");
     b.className = "tab" + (key === tab ? " on" : ""); b.textContent = label; b.dataset.key = key;
-    const nWork = key === "work" ? (S.work || []).filter(d => favPass(d.ship_name)).length : 0;
-    if (nWork) {      // 지금 작업 중인 척수
-      const s = document.createElement("span"); s.className = "bd"; s.textContent = nWork; b.appendChild(s);
-    }
-    if (key === "chg") {            // 최근 24시간 안에 바뀐 건수(신규 제외)를 탭에 붙인다
-      const n = chgRecent().filter(e => e.kind !== "new" && favPass(e.ship)).length;
-      if (n) { const s = document.createElement("span"); s.className = "bd"; s.textContent = n > 99 ? "99+" : n; b.appendChild(s); }
-    }
     b.onclick = () => { tab = key; sessionStorage.setItem("bm.tab", key); buildTabs(); renderPane(); };
     box.appendChild(b);
   }
@@ -1527,7 +1519,7 @@ function renderChanges(pane) {
   const list = all.filter(pass);
   const tm = (s) => { const d = parseDT(s); return d ? fmtDT(d) : "—"; };
   const line = (label, a, b, d) => `<div class="ln"><span class="k">${label}</span><span class="old">${tm(a)}</span> → <b>${tm(b)}</b><span class="d ${d > 0 ? "late" : "early"}">${fmtShift(d)}</span></div>`;
-  let h = `<div class="tf cg"><div class="head"><h2>스케줄 변경</h2><span class="m">수집할 때마다 이전 일정과 비교 · 30분 이상 바뀐 것만 · 최근 72시간</span></div>
+  let h = `<div class="tf cg"><div class="head"><h2>접안변경이력</h2><span class="m">수집할 때마다 이전 일정과 비교 · 30분 이상 바뀐 것만 · 최근 72시간</span></div>
     <div class="chips" style="margin-top:0">${FILTERS.map(([k, lb, fn]) =>
       `<button type="button" class="chip${k === chgFilter ? " on" : ""}" data-f="${k}">${lb} ${all.filter(fn).length}</button>`).join("")}</div>`;
   if (!list.length) {
@@ -1590,7 +1582,7 @@ async function loadHist() {
     HS.data = j; HS.err = "";
   } catch (e) {
     if (!HS.data) HS.err = e.message === "key" ? "" : e.message === "none"
-      ? (STATIC ? "아직 쌓인 이력이 없습니다" : "항차 이력은 게시된 사이트에서만 쌓입니다") : "이력 파일을 읽을 수 없습니다";
+      ? (STATIC ? "아직 쌓인 이력이 없습니다" : "항차별변경이력은 게시된 사이트에서만 쌓입니다") : "이력 파일을 읽을 수 없습니다";
   }
   HS.loading = false; HS.at = retry ? 0 : Date.now();
   histPaint();
@@ -1598,7 +1590,7 @@ async function loadHist() {
 function renderHist(pane) {
   if (!HS.built) {
     HS.built = true;
-    pane.innerHTML = `<div class="tf hs"><div class="head"><h2>항차 이력</h2><span class="m" id="hsMeta">항차별로 처음 예정에서 출항까지 바뀐 내용</span></div>
+    pane.innerHTML = `<div class="tf hs"><div class="head"><h2>항차별변경이력</h2><span class="m" id="hsMeta">항차별로 처음 예정에서 출항까지 바뀐 내용</span></div>
       <form class="form" id="hsForm" autocomplete="off">
         <div class="fld"><label for="hsQ">선명 · 항차 · 터미널</label><input id="hsQ" placeholder="예: PEGASUS TERA 또는 한진신항" autocomplete="off" spellcheck="false"></div>
         <select class="sel" id="hsSort" aria-label="정렬"><option value="recent">최근 접안 순</option><option value="delay">지연 큰 순</option><option value="count">변경 많은 순</option></select>
