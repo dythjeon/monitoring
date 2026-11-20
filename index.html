@@ -2020,12 +2020,21 @@ function renderFx() {
     const ch = c == null ? "" : `<span class="ch ${cls}">${c > 0 ? "▲" : c < 0 ? "▼" : "–"} ${num(Math.abs(c))}${it.pct == null ? "" : ` (${it.pct > 0 ? "+" : ""}${it.pct.toFixed(2)}%)`}</span>`;
     return `<div class="it"><span class="cd">${esc(it.code)}</span><span class="nm">${esc(it.name)}${it.unit > 1 ? " " + it.unit : ""}</span><span class="rt">${num(it.rate)}</span>${ch}</div>`;
   };
-  const set = `<div class="set">${fx.items.map(one).join("")}<div class="it src">${esc(fx.source || "")} · ${esc((fx.updated || "").slice(5))} 기준 · 원(KRW)</div></div>`;
+  // 국제유가(두바이·WTI·브렌트, $/bbl)를 환율 뒤에 이어 붙인다. 하루 한 번 바뀌는 전일 종가다.
+  const oil = fx.oil && fx.oil.items && fx.oil.items.length ? fx.oil : null;
+  const oilOne = (it) => {
+    const c = it.change, cls = c > 0 ? "up" : c < 0 ? "dn" : "";
+    const ch = c == null ? "" : `<span class="ch ${cls}">${c > 0 ? "▲" : c < 0 ? "▼" : "–"} ${num(Math.abs(c))}${it.pct == null ? "" : ` (${it.pct > 0 ? "+" : ""}${it.pct.toFixed(2)}%)`}</span>`;
+    return `<div class="it"><span class="cd">${esc(it.code)}</span><span class="nm">${esc(it.name)}</span><span class="rt">$${num(it.rate)}</span>${ch}</div>`;
+  };
+  const oilSet = oil ? oil.items.map(oilOne).join("") + `<div class="it src">${esc(oil.source || "")} · ${esc((oil.date || "").slice(5))} 기준 · $/bbl</div>` : "";
+  const count = fx.items.length + 1 + (oil ? oil.items.length + 1 : 0);
+  const set = `<div class="set">${fx.items.map(one).join("")}<div class="it src">${esc(fx.source || "")} · ${esc((fx.updated || "").slice(5))} 기준 · 원(KRW)</div>${oilSet}</div>`;
   // 화면이 넓어도 빈 곳이 없도록 한 묶음을 충분히 반복한 뒤, 그 전체를 두 번 놓는다
-  const reps = Math.max(2, Math.ceil(innerWidth / (fx.items.length * 230 + 330)) + 1);
+  const reps = Math.max(2, Math.ceil(innerWidth / (count * 235 + 100)) + 1);
   const half = set.repeat(reps);
   $("fxTrack").innerHTML = half + half;
-  $("fxTrack").style.animationDuration = (reps * (fx.items.length + 1) * 6.5) + "s";
+  $("fxTrack").style.animationDuration = (reps * count * 6.5) + "s";
   box.classList.add("on");
 }
 

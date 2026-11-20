@@ -152,6 +152,8 @@ def main():
     prev = previous_payload(password)
     rows, empty, errors = carry_over(prev, rows, empty, errors, stats, datetime.now())
     chg = changes.update((prev or {}).get("changes") or changes.load_file(state_file), rows, stats)
+    if fx and not fx.get("oil") and ((prev or {}).get("fx") or {}).get("oil"):
+        fx["oil"] = prev["fx"]["oil"]          # 유가는 하루 한 번 바뀐다. 이번에 못 읽었으면 직전 값을 그대로 쓴다
     changes.save_file(state_file, chg)
     sur_locs = None
     if SUR_ENABLED:                       # Basic Surcharge 탭의 Select Location 목록

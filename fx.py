@@ -55,11 +55,49 @@ def _from_er_api():
     return {"source": "open.er-api.com (일 1회 갱신)", "updated": datetime.now().strftime("%Y-%m-%d %H:%M"), "items": items}
 
 
+OIL_URL = "https://www.petronet.co.kr/v4/main.jsp"
+OIL_NAMES = [("textDubai", "DUBAI", "두바이유"), ("textWti", "WTI", "서부텍사스유"), ("textBrent", "BRENT", "브렌트유")]
+
+
+def fetch_oil():
+    """국제 원유가격(한국석유공사 페트로넷 첫 화면의 '국제원유가격' 칸). 하루 한 번, 전일 종가 기준($/bbl).
+    반환: {"source", "date": "YYYY.MM.DD", "items": [{"code", "name", "rate", "change", "pct"}]}
+    등락은 화면의 gap_up/gap_down 표시로 부호를 정한다."""
+    import re
+    r = requests.get(OIL_URL, headers=HEADERS, timeout=15)
+    r.raise_for_status()
+    r.encoding = "utf-8"
+    html = r.text
+    items, pos = [], len(html)
+    for elem, code, name in OIL_NAMES:
+        m = re.search(r'id="%s".*?class="coast">\s*([\d.,]+)\s*</p>\s*<span class="gap_(\w*)[^"]*">\s*([\d.,]*)' % elem, html, re.S)
+        if not m:
+            continue
+        rate, chg = _num(m.group(1)), _num(m.group(3)) or 0.0
+        if rate is None:
+            continue
+        if m.group(2) == "down":
+            chg = -chg
+        prev = rate - chg
+        items.append({"code": code, "name": name, "rate": rate, "change": chg,
+                      "pct": round(chg / prev * 100, 2) if prev else None})
+        pos = min(pos, m.start())
+    if not items:
+        raise ValueError("국제원유가격 칸을 찾지 못했습니다")
+    dates = re.findall(r'class="date">\s*(\d{4}\.\d{2}\.\d{2})\s*\(\$/bbl\)', html[:pos])
+    return {"source": "한국석유공사 페트로넷", "date": dates[-1] if dates else "", "items": items}
+
+
 def fetch_fx():
     try:
-        return _from_naver()
+        d = _from_naver()
     except Exception:
-        return _from_er_api()
+        d = _from_er_api()
+    try:
+        d["oil"] = fetch_oil()
+    except Exception:
+        d["oil"] = None            # 유가를 못 읽어도 환율 띠는 그대로 나온다
+    return d
 
 
 if __name__ == "__main__":
@@ -69,3 +107,4 @@ if __name__ == "__main__":
     print(d["source"], d["updated"])
     for it in d["items"]:
         print(f"  {it['code']} {it['name']:8} {it['unit']:>3} = {it['rate']:>10,.2f}원  {it['change']} ({it['pct']}%)")
+    print(d.get("oil"))
