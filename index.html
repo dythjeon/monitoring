@@ -373,6 +373,31 @@ footer { color: #a3a8b8; }
 /* ---- 스케줄 변경 (틀은 Barge Tariff 의 .tf 를 같이 쓴다) ---- */
 .tab .bd { display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 5px; border-radius: 999px; background: #ef4444; color: #fff; font-size: 10.5px; font-weight: 700; line-height: 17px; text-align: center; vertical-align: 1px; }
 .tab.on .bd { background: #fff; color: var(--primary); }
+/* ---- 내 모선(즐겨찾기) ---- */
+.favbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: -6px; }
+.favbar button { border: 1px solid var(--border); background: var(--card); border-radius: 10px; padding: 7px 13px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; color: var(--text); }
+.favbar button:hover { border-color: var(--primary); color: var(--primary); }
+.favbar button.on, .favbar button.on:hover { background: #fff5d6; border-color: #f0b400; color: #7a5200; }
+.favbar .m { color: var(--muted); font-size: 11.5px; }
+.fp { position: fixed; inset: 0; z-index: 70; background: rgba(16,20,38,.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.fp .box { background: var(--card); border-radius: 16px; width: 100%; max-width: 460px; max-height: 86vh; display: flex; flex-direction: column; box-shadow: 0 24px 60px -20px rgba(11,15,25,.5); }
+.fp .top { padding: 18px 20px 10px; }
+.fp h3 { margin: 0 0 4px; font-size: 16px; }
+.fp .top p { margin: 0 0 12px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.fp input[type=search] { width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; font: inherit; font-size: 13.5px; outline: none; }
+.fp input[type=search]:focus { border-color: var(--primary); }
+.fp .list { overflow-y: auto; padding: 0 10px; flex: 1; min-height: 120px; }
+.fp label { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; cursor: pointer; font-size: 13.5px; }
+.fp label:hover { background: var(--primary-soft); }
+.fp label input { width: 16px; height: 16px; flex: none; accent-color: #f0b400; }
+.fp label b { font-weight: 600; }
+.fp label span { margin-left: auto; color: var(--muted); font-size: 11.5px; text-align: right; white-space: nowrap; }
+.fp .none { padding: 30px 10px; text-align: center; color: var(--muted); font-size: 13px; }
+.fp .foot { display: flex; align-items: center; gap: 8px; padding: 12px 20px 16px; border-top: 1px solid var(--border); }
+.fp .foot .n { margin-right: auto; font-size: 12.5px; color: var(--muted); }
+.fp .foot button { border: 1px solid var(--border); background: var(--card); border-radius: 10px; padding: 8px 16px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text); }
+.fp .foot button.ok { background: var(--primary); border-color: var(--primary); color: #fff; }
+@media (max-width: 760px) { .favbar .m { display: none; } }
 .cg .day { margin: 20px 2px 6px; font-size: 12px; font-weight: 700; color: var(--muted); }
 .cg .ev { display: grid; grid-template-columns: 52px minmax(190px, 300px) 1fr; gap: 4px 18px; align-items: start; padding: 12px; border-top: 1px solid var(--border); }
 .cg .ev:hover { background: var(--hover-row); }
@@ -557,6 +582,7 @@ footer { color: #a3a8b8; }
 <main>
   <div class="stats" id="stats"></div>
   <div class="tabs" id="tabs"></div>
+  <div class="favbar" id="favbar"></div>
   <div class="card" id="card">
     <div class="pane" data-pane="gantt" id="ganttPane"></div>
     <div class="pane" data-pane="work" id="workPane"></div>
@@ -681,6 +707,80 @@ function bindTip(node, html) {
 }
 const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
+// ---- 내 모선(즐겨찾기) ----
+// 사이트에 개인 계정이 없어서(공용 비밀번호 하나) 즐겨찾기는 각자 쓰는 브라우저에 저장한다(localStorage).
+// 그래서 사람마다(정확히는 기기·브라우저마다) 따로 유지된다. 선명 기준이라 다음 항차에도 그대로 남는다.
+const FAV = { set: new Map(), only: false };          // 정규화한 선명 -> 보여 줄 선명
+const favNorm = (n) => String(n || "").toUpperCase().replace(/[^A-Z0-9가-힣]/g, "");
+try {
+  for (const n of JSON.parse(localStorage.getItem("bm.fav") || "[]")) if (favNorm(n)) FAV.set.set(favNorm(n), n);
+  FAV.only = localStorage.getItem("bm.favOnly") === "1";
+} catch {}
+function favSave() { try { localStorage.setItem("bm.fav", JSON.stringify([...FAV.set.values()])); localStorage.setItem("bm.favOnly", FAV.only ? "1" : "0"); } catch {} }
+const isFav = (n) => FAV.set.has(favNorm(n));
+const favActive = () => FAV.only && FAV.set.size > 0;          // '내 모선만 보기' 가 켜져 있는가
+const favPass = (n) => !favActive() || isFav(n);
+function favToggle(name) {
+  const k = favNorm(name); if (!k) return false;
+  if (FAV.set.has(k)) FAV.set.delete(k); else FAV.set.set(k, name);
+  favSave();
+  return FAV.set.has(k);
+}
+const HOVER = matchMedia("(hover: hover)").matches;          // 마우스가 있는 기기: 막대를 눌러 즐겨찾기를 바꿀 수 있다
+function favClick(name) { const on = favToggle(name); toast(on ? `★ ${name} — 내 모선에 추가` : `${name} — 내 모선에서 뺌`); renderAll(); }
+function renderFavBar() {
+  const box = $("favbar");
+  const show = TAB_KEYS.includes(tab) || tab === "work" || tab === "chg";
+  box.style.display = show ? "" : "none";
+  if (!show) return;
+  const n = FAV.set.size;
+  box.innerHTML = `<button type="button" id="favOnly" class="${favActive() ? "on" : ""}">★ 내 모선만 보기${n ? " " + n : ""}</button>
+    <button type="button" id="favPick">내 모선 고르기</button>
+    <span class="m">${favActive() ? `즐겨찾기한 ${n}척만 표시 중 · 다시 누르면 전체 보기` : n ? "이 브라우저에 저장됩니다 (사람마다 따로)" : "담당 모선을 골라 두면 그 배만 모아 볼 수 있습니다 · 이 브라우저에 저장"}</span>`;
+  $("favOnly").onclick = () => { if (!FAV.set.size) return openFavPick(); FAV.only = !FAV.only; favSave(); renderAll(); };
+  $("favPick").onclick = openFavPick;
+}
+function openFavPick() {
+  if (document.querySelector(".fp")) return;
+  // 지금 일정에 있는 모든 모선 + (일정에는 없지만) 이미 즐겨찾기한 모선
+  const m = new Map();
+  const put = (name, term, eta) => {
+    const k = favNorm(name); if (!k) return;
+    const e = m.get(k) || { name, terms: new Set(), eta: null };
+    if (term) e.terms.add(term);
+    if (eta && (!e.eta || eta < e.eta)) e.eta = eta;
+    m.set(k, e);
+  };
+  for (const d of S.data) put(d.ship_name, d.terminal, d.eta);
+  for (const d of S.work || []) put(d.ship_name, d.terminal, null);
+  for (const [k, name] of FAV.set) if (!m.has(k)) m.set(k, { name, terms: new Set(), eta: null, gone: true });
+  const items = [...m.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+  const ov = document.createElement("div"); ov.className = "fp";
+  ov.innerHTML = `<div class="box" role="dialog" aria-label="내 모선 고르기"><div class="top"><h3>내 모선 고르기</h3>
+    <p>담당하는 모선에 체크하세요. 이 브라우저에만 저장되어 다른 사람 화면에는 영향이 없습니다. 선명 기준이라 다음 항차에도 유지됩니다.</p>
+    <input type="search" placeholder="선명 또는 터미널 검색" autocomplete="off"></div>
+    <div class="list"></div>
+    <div class="foot"><span class="n"></span><button type="button" class="clr">모두 해제</button><button type="button" class="ok">완료</button></div></div>`;
+  const list = ov.querySelector(".list"), q = ov.querySelector("input"), cnt = ov.querySelector(".n");
+  const paint = () => {
+    const w = q.value.trim().toUpperCase();
+    const hit = items.filter(([k, e]) => !w || e.name.toUpperCase().includes(w) || [...e.terms].some(t => t.toUpperCase().includes(w)));
+    list.innerHTML = hit.length ? hit.map(([k, e]) => `<label><input type="checkbox" data-k="${k}"${FAV.set.has(k) ? " checked" : ""}><b>${esc(e.name)}</b>
+      <span>${e.gone ? "현재 일정 없음" : esc([...e.terms].join(", ")) + (e.eta ? " · " + fmtDay(e.eta) : "")}</span></label>`).join("")
+      : `<div class="none">${items.length ? "검색 결과가 없습니다" : "불러온 일정이 없습니다"}</div>`;
+    cnt.textContent = `선택 ${FAV.set.size}척`;
+  };
+  list.onchange = (ev) => { const k = ev.target.dataset.k; if (!k) return; favToggle(m.get(k).name); cnt.textContent = `선택 ${FAV.set.size}척`; };
+  q.oninput = paint;
+  const close = () => { ov.remove(); if (!FAV.set.size) FAV.only = false; favSave(); renderAll(); };
+  ov.querySelector(".ok").onclick = close;
+  ov.querySelector(".clr").onclick = () => { FAV.set.clear(); favSave(); paint(); };
+  ov.onclick = (ev) => { if (ev.target === ov) close(); };
+  paint();
+  document.body.appendChild(ov);
+  if (HOVER) q.focus();
+}
+
 // ---- 한국 공휴일 ----
 // 날짜 라벨을 빨갛게 칠할 날. 음력 명절(설·부처님오신날·추석)은 브라우저의 한국 음력(dangi)으로 계산하고,
 // 대체공휴일 규칙까지 적용한다. 선거일처럼 그때그때 정해지는 날은 HOLIDAY_EXTRA 에 적는다.
@@ -740,11 +840,12 @@ function buildTabs() {
   for (const [key, label] of TABS) {
     const b = document.createElement("button");
     b.className = "tab" + (key === tab ? " on" : ""); b.textContent = label; b.dataset.key = key;
-    if (key === "work" && S.work && S.work.length) {      // 지금 작업 중인 척수
-      const s = document.createElement("span"); s.className = "bd"; s.textContent = S.work.length; b.appendChild(s);
+    const nWork = key === "work" ? (S.work || []).filter(d => favPass(d.ship_name)).length : 0;
+    if (nWork) {      // 지금 작업 중인 척수
+      const s = document.createElement("span"); s.className = "bd"; s.textContent = nWork; b.appendChild(s);
     }
     if (key === "chg") {            // 최근 24시간 안에 바뀐 건수(신규 제외)를 탭에 붙인다
-      const n = chgRecent().filter(e => e.kind !== "new").length;
+      const n = chgRecent().filter(e => e.kind !== "new" && favPass(e.ship)).length;
       if (n) { const s = document.createElement("span"); s.className = "bd"; s.textContent = n > 99 ? "99+" : n; b.appendChild(s); }
     }
     b.onclick = () => { tab = key; sessionStorage.setItem("bm.tab", key); buildTabs(); renderPane(); };
@@ -824,7 +925,8 @@ function renderGantt(pane, key) {
   pane.innerHTML = "";
   const now = new Date();
   const [ws, we] = ganttWindow();
-  const data = key === "전체" ? S.data : S.data.filter(d => d.region === key);
+  const favOn = favActive();
+  const data = (key === "전체" ? S.data : S.data.filter(d => d.region === key)).filter(d => favPass(d.ship_name));
   const usable = data.filter(d => inWindow(d, ws, we));
 
   // ---- 행 구성: TERMINAL_ORDER 를 그대로 깔고, 접안 없는 터미널은 빈 행으로 자리만 지킨다
@@ -837,7 +939,7 @@ function renderGantt(pane, key) {
     if (key !== "전체" && region !== key) continue;
     const berths = present[term] ? [...present[term]].sort((a, b) => String(a).localeCompare(String(b), "ko", { numeric: true })) : [];
     if (berths.length) berths.forEach(b => rows.push({ region, term, berth: b }));
-    else rows.push({ region, term, berth: null });
+    else if (!favOn) rows.push({ region, term, berth: null });      // 내 모선만 볼 때는 빈 터미널 줄을 접는다
   }
 
   // ---- 같은 선석에 겹치는 선박은 서브레인으로 세로 분할 (interval partitioning)
@@ -984,7 +1086,9 @@ function renderGantt(pane, key) {
     const w = Math.max(x2 - x1, 2);
     const color = REGION_COLOR[d.region] || C.primary;
     const live = d.eta <= now && now <= d.etd;
-    const g = el("g", { class: "bar" }); g.style.cursor = "default";
+    const fav = isFav(d.ship_name), star = fav && !favOn ? "★ " : "";
+    const g = el("g", { class: "bar" }); g.style.cursor = HOVER ? "pointer" : "default";
+    if (HOVER) g.addEventListener("click", () => favClick(d.ship_name));
     g.appendChild(el("rect", { x: x1, y: yc - barH / 2, width: w, height: barH, rx: 5, ry: 5, fill: color,
       stroke: live ? blend(color, "#000000", 0.3) : C.card, "stroke-width": live ? 2 : 1.2 }));
 
@@ -993,7 +1097,7 @@ function renderGantt(pane, key) {
     if (w > spanW / 55) {
       const avail = w - 8 - shift * 2;
       const twoLine = w > spanW / 22 && d.voyage && barH >= 27;
-      const name = fitText(d.ship_name || "", twoLine ? 13.5 : 12.5, 700, avail);
+      const name = fitText(star + (d.ship_name || ""), twoLine ? 13.5 : 12.5, 700, avail);
       const cx = x1 + w / 2 + shift;
       if (name) g.appendChild(el("text", { x: cx, y: twoLine ? yc - 2 : yc, "text-anchor": "middle", "dominant-baseline": twoLine ? "auto" : "central",
         "font-size": twoLine ? 13.5 : 12.5, "font-weight": 700, fill: "#fff" }, name));
@@ -1006,6 +1110,8 @@ function renderGantt(pane, key) {
     if (d.route_label) html += "\n항로: " + esc(d.route_label);
     if (d.line) html += "\n선사: " + esc(d.line);
     html += `\n<span style="opacity:.7">${esc(d.terminal)} ${esc(d.berth)}선석${live ? " · 접안 중" : ""}</span>`;
+    if (fav) html += `\n<span style="color:#ffd24d">★ 내 모선</span>`;
+    if (HOVER) html += `\n<span style="opacity:.55">클릭: 내 모선 ${fav ? "해제" : "추가"}</span>`;
     // 최근 24시간 안에 일정이 바뀐 배: 막대 오른쪽 위에 주황 점 + 툴팁에 무엇이 바뀌었는지
     const ce = chgMark.get(chgKey(d.terminal, d.ship_name, d.voyage));
     if (ce) {
@@ -1049,7 +1155,7 @@ function renderGantt(pane, key) {
   pane.appendChild(wrap);
   pane.scrollLeft = keepLeft;
   if (!usable.length && S.updated_at) {
-    const m = document.createElement("div"); m.className = "empty-msg"; m.textContent = "이 기간에 예정된 선박이 없습니다"; pane.appendChild(m);
+    const m = document.createElement("div"); m.className = "empty-msg"; m.textContent = favOn ? "이 기간에 즐겨찾기한 내 모선의 일정이 없습니다" : "이 기간에 예정된 선박이 없습니다"; pane.appendChild(m);
   }
 }
 
@@ -1060,19 +1166,20 @@ function renderWork(pane) {
   //   진행률 = (양하 완료 + 적하 완료) / (양하 합계 + 적하 합계)
   pane.innerHTML = "";
   const ord = (t) => { const i = TERMINAL_ORDER.indexOf(t); return i < 0 ? 99 : i; };
-  const all = [...S.work].sort((a, b) => {
+  const favOn = favActive();
+  const all = S.work.filter(d => favPass(d.ship_name)).sort((a, b) => {
     const na = parseInt((a.berth || "").match(/\d+/) || 999), nb = parseInt((b.berth || "").match(/\d+/) || 999);
     return ord(a.terminal) - ord(b.terminal) || na - nb || (a.berth || "").localeCompare(b.berth || "") || (a.eta || "").localeCompare(b.eta || "");
   });
   const rows = all;
   const box = document.createElement("div"); box.className = "work";
   const bar = document.createElement("div"); bar.className = "wbar";
-  bar.innerHTML = `<b>작업 중 ${all.length}척</b><span class="m">선석 탭에 나오는 모선이 접안해 작업 중일 때만 표시 · 진행률 = 완료 ÷ 합계 (양하 + 적하) · 오른쪽 숫자는 남은 개수 / 합계</span>`;
+  bar.innerHTML = `<b>${favOn ? "내 모선 " : ""}작업 중 ${all.length}척</b><span class="m">선석 탭에 나오는 모선이 접안해 작업 중일 때만 표시 · 진행률 = 완료 ÷ 합계 (양하 + 적하) · 오른쪽 숫자는 남은 개수 / 합계</span>`;
   box.appendChild(bar);
   pane.appendChild(box);
   if (!rows.length) {
     const m = document.createElement("div"); m.className = "wnone";
-    m.textContent = !S.updated_at ? "불러오는 중..." : "현재 작업 중인 본선이 없습니다";
+    m.textContent = !S.updated_at ? "불러오는 중..." : favOn ? "지금 작업 중인 내 모선이 없습니다" : "현재 작업 중인 본선이 없습니다";
     box.appendChild(m);
     return;
   }
@@ -1097,13 +1204,14 @@ function renderWork(pane) {
     row.innerHTML = `<div class="lb" style="color:${REGION_COLOR[TERMINAL_REGION[d.terminal]] || C.text}">${esc(d.terminal)} <span>${esc(d.berth)}${/^\d+$/.test(d.berth || "") ? "선석" : ""}</span></div>
       <div class="track">${pct > 0 ? `<div class="fill" style="width:${pct}%;background:${color}"></div>` : ""}
         <div class="txt" style="${inside ? `left:${pct / 2}%;transform:translate(-50%,-50%);color:#fff` : over ? `left:8px;color:${C.text}` : `left:calc(${pct}% + 8px);color:${C.text}`}">
-          <div class="n">${esc(d.ship_name)}${d.line ? `(${esc(d.line)})` : ""}</div>${sub ? `<div class="vy" style="${inside ? "" : "color:" + C.muted}">${esc(sub)}</div>` : ""}</div>
+          <div class="n">${isFav(d.ship_name) && !favOn ? "★ " : ""}${esc(d.ship_name)}${d.line ? `(${esc(d.line)})` : ""}</div>${sub ? `<div class="vy" style="${inside ? "" : "color:" + C.muted}">${esc(sub)}</div>` : ""}</div>
       </div>
       <div class="pct" style="color:${color}">${planned ? "대기" : pct + "%"}${known && total ? `<small>${fmtN(left)} / ${fmtN(total)}</small>` : ""}</div>`;
     const time = d.eta && d.etd ? `\n접안 ${fmtDT(parseDT(d.eta))} ~ 출항 ${fmtDT(parseDT(d.etd))}` : "";
     const qty = known ? `\n양하 ${fmtN(d.d_done)} / ${fmtN(d.d_total)}  ·  적하 ${fmtN(d.l_done)} / ${fmtN(d.l_total)}\n남은 작업 ${fmtN(left)}개 (합계 ${fmtN(total)}개)`
                       : (d.discharge || d.load ? `\n양하 ${esc(d.discharge || "-")} / 적하 ${esc(d.load || "-")}` : "");
-    bindTip(row, `<b>${esc(d.ship_name)}${d.line ? `(${esc(d.line)})` : ""}</b>${d.voyage ? " · " + esc(d.voyage) : ""}\n${esc(d.terminal)} ${esc(d.berth)}${time}\n진행률 ${pct}%${qty}`);
+    bindTip(row, `<b>${esc(d.ship_name)}${d.line ? `(${esc(d.line)})` : ""}</b>${d.voyage ? " · " + esc(d.voyage) : ""}\n${esc(d.terminal)} ${esc(d.berth)}${time}\n진행률 ${pct}%${qty}${HOVER ? `\n<span style="opacity:.55">클릭: 내 모선 ${isFav(d.ship_name) ? "해제" : "추가"}</span>` : ""}`);
+    if (HOVER) { row.style.cursor = "pointer"; row.onclick = () => favClick(d.ship_name); }
     box.appendChild(row);
   }
 }
@@ -1407,7 +1515,7 @@ function chgSummary(e) {          // 간트 툴팁용 한 줄
   return p.join(" · ");
 }
 function renderChanges(pane) {
-  const all = chgAll().slice().sort((a, b) => b.t.localeCompare(a.t));
+  const all = chgAll().filter(e => favPass(e.ship)).sort((a, b) => b.t.localeCompare(a.t));
   const isBerth = (e) => e.kind === "chg" && (e.berth0 || "") !== (e.berth1 || "");
   const isTime = (e) => e.kind === "chg" && (Math.abs(e.d_eta || 0) >= 30 || Math.abs(e.d_etd || 0) >= 30);
   const FILTERS = [["all", "전체", () => true], ["time", "시간 변경", isTime], ["berth", "선석 변경", isBerth],
@@ -1421,6 +1529,7 @@ function renderChanges(pane) {
       `<button type="button" class="chip${k === chgFilter ? " on" : ""}" data-f="${k}">${lb} ${all.filter(fn).length}</button>`).join("")}</div>`;
   if (!list.length) {
     h += `<div class="hint">${all.length ? "이 조건에 해당하는 변경이 없습니다"
+      : favActive() ? "최근 72시간 안에 내 모선의 일정 변경이 없습니다"
       : S.changes ? "아직 감지된 변경이 없습니다<br>이 기능을 켠 뒤 수집된 일정부터 비교하므로, 터미널 일정이 바뀌면 여기에 쌓입니다" : "불러오는 중..."}</div>`;
   }
   let day = "";
@@ -1997,6 +2106,7 @@ function renderPane() {
   const paneKey = tab === "work" ? "work" : tab === "empty" ? "empty" : tab === "typhoon" ? "typhoon" : tab === "tariff" ? "tariff" : tab === "sur" ? "sur" : tab === "chg" ? "chg" : tab === "hist" ? "hist" : "gantt";
   const pane = $(paneKey + "Pane"); pane.classList.add("on");
   hideTip();
+  renderFavBar();
   if (paneKey === "gantt") renderGantt(pane, tab);
   else if (paneKey === "work") renderWork(pane);
   else if (paneKey === "typhoon") renderTyphoon(pane);
@@ -2042,7 +2152,7 @@ function renderAll() {
   renderFx();
   buildTabs();            // 스케줄 변경 탭의 건수 배지를 새 자료로
   const [ws, we] = ganttWindow();
-  renderStats(S.data.filter(d => inWindow(d, ws, we)));
+  renderStats(S.data.filter(d => inWindow(d, ws, we) && favPass(d.ship_name)));
   renderStatus();
   renderPane();
 }
