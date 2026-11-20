@@ -542,6 +542,28 @@ footer { color: #a3a8b8; }
   .tf { padding: 4px 2px 8px; }
   .tf .fld { max-width: none; flex-basis: 100%; }
   .tf th, .tf td { padding: 8px 9px; }
+  /* Barge Tariff 결과: 휴대폰에서는 가로로 긴 표 대신 요율 한 건 = 카드 한 장 */
+  .tf table.tfc, .tf table.tfc tbody { display: block; }
+  .tf table.tfc thead { display: none; }
+  .tf table.tfc tr { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8px; padding: 12px 12px 13px; border-top: 1px solid var(--border); background: var(--card);
+    grid-template-areas: "d o" "b b" "r2 r4" "t2 t4" "m m"; }
+  .tf table.tfc tr:first-child { border-top: 0; }
+  .tf table.tfc tr.grp { border-top: 6px solid var(--bg); }
+  .tf table.tfc td { display: block; padding: 0; border: 0; text-align: left; white-space: normal; }
+  .tf table.tfc td:nth-child(1) { grid-area: o; text-align: right; color: var(--muted); font-size: 12px; align-self: center; white-space: nowrap; }
+  .tf table.tfc td:nth-child(1)::before { content: "출발 "; }
+  .tf table.tfc td:nth-child(1) .cd { display: none; }
+  .tf table.tfc td:nth-child(2) { grid-area: d; font-size: 15px; }
+  .tf table.tfc td:nth-child(3) { grid-area: b; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .tf table.tfc td:nth-child(4) { grid-area: r2; } .tf table.tfc td:nth-child(5) { grid-area: r4; }
+  .tf table.tfc td:nth-child(6) { grid-area: t2; } .tf table.tfc td:nth-child(7) { grid-area: t4; }
+  .tf table.tfc td.rd { margin-top: 10px; padding: 8px 11px 1px; background: var(--bg); border-radius: 10px 10px 0 0; font-size: 17px; }
+  .tf table.tfc td.rd::before { display: block; font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 1px; }
+  .tf table.tfc td:nth-child(4)::before { content: "20' Round"; } .tf table.tfc td:nth-child(5)::before { content: "40' Round"; }
+  .tf table.tfc td.dt { padding: 0 11px 8px; background: var(--bg); border-radius: 0 0 10px 10px; font-size: 11.5px; }
+  .tf table.tfc td.dt::before { content: "Full + Empty  "; white-space: pre; opacity: .75; }
+  .tf table.tfc td.rm { grid-area: m; margin-top: 9px; line-height: 1.6; }
+  .tf table.tfc td.rm:empty { display: none; }
   .fx .it { padding: 9px 18px; }
   .tip { white-space: pre-wrap; }
   footer { padding: 0 12px 14px; }
@@ -1483,7 +1505,7 @@ function tariffSearch() {
   const rd = (r, v, mn) => v == null ? `<td class="r rd" style="color:var(--muted)">–</td>`
     : `<td class="r rd"><small>${cur(r)}</small>${money(v)}${cnt[r.gk] > 1 && mn === v ? `<span class="best">최저</span>` : ""}</td>`;
   const dt = (f, e) => `<td class="r dt">${money(f)} + ${money(e)}</td>`;
-  let h = `<div class="wrap"><table><thead><tr><th>출발지</th><th>도착지</th><th>Barge사</th><th class="r">20' Round</th><th class="r">40' Round</th>
+  let h = `<div class="wrap"><table class="tfc"><thead><tr><th>출발지</th><th>도착지</th><th>Barge사</th><th class="r">20' Round</th><th class="r">40' Round</th>
     <th class="r">20' Full + Empty</th><th class="r">40' Full + Empty</th><th>비고</th></tr></thead><tbody>`;
   let prev = null;
   for (const r of rows) {
