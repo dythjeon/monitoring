@@ -34,6 +34,8 @@ from typhoon import fetch_typhoons
 from fx import fetch_fx
 from surcharge import fetch_locations, fetch_surcharge
 import changes
+from work import fetch_all_work
+from scraper import _norm_name, _is_dys
 
 try:                                   # 한글 콘솔 출력 깨짐 방지
     sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
@@ -120,15 +122,12 @@ def collect():
         data, errors, stats = fetch_all()
     except Exception as e:
         data, errors, stats = [], [str(e)], []
-    try:
-        work = with_retry(fetch_bptc_work_status)
-    except Exception as e:
-        work = []
-        errors = list(errors) + [f"본선작업현황: {e}"]
-    try:
-        work = list(work) + with_retry(fetch_hjit_work_status)
-    except Exception as e:
-        errors = list(errors) + [f"본선작업현황(한진신항): {e}"]
+    # 본선작업현황: 접안해 있는 모든 모선(work.py). 선석배정에서 추적 중인 선명이면 ours 로 표시한다.
+    work, work_errors = fetch_all_work()
+    errors = list(errors) + work_errors
+    ours = {(d.get("terminal"), _norm_name(d.get("ship_name"))) for d in data}
+    for w in work:
+        w["ours"] = (w.get("terminal"), _norm_name(w.get("ship_name"))) in ours or _is_dys(w.get("line"))
     empty = []
     for label, fn in (("국내공컨현황", fetch_bptc_empty_status),
                       ("국내공컨현황(광양서부)", fetch_gwct_empty_status),

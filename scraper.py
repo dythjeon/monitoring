@@ -219,7 +219,7 @@ def fetch_bptc(time_range="week"):
     return rows
 
 
-def fetch_bptc_work_status():
+def fetch_bptc_work_status(only_tracked=True):
     """BPTC(신선대/감만) 본선작업현황(선석별 양적하 진행률)을 가져온다.
 
     info.bptc.co.kr 메인 페이지 자체에 선석별 현재 작업중인 선박과
@@ -262,7 +262,7 @@ def fetch_bptc_work_status():
             discharge = counts[0].get_text(strip=True) if len(counts) > 0 else ""
             load = counts[1].get_text(strip=True) if len(counts) > 1 else ""
 
-            if not (_is_dys(line) or _norm_name(ship_name) in _BPTC_TRACKED_NAMES):
+            if only_tracked and not (_is_dys(line) or _norm_name(ship_name) in _BPTC_TRACKED_NAMES):
                 continue
 
             rows.append({
@@ -361,7 +361,7 @@ def fetch_hjit(period_days=14, base_date=None):
     return rows
 
 
-def fetch_hjit_work_status():
+def fetch_hjit_work_status(only_tracked=True):
     """HJIT 본선작업현황(선석별 양적하 진행률).
 
     vesselStatus 화면과 같은 계산: /HJIT/document/vesselContainer 로 컨테이너 목록을 받아
@@ -373,7 +373,8 @@ def fetch_hjit_work_status():
     # 오늘 일정 중 인천항 탭에서 추적하는 모선(DYS·IQH/IHP 항로·편성표 선박)만.
     # 작업중/접안완료는 진행률을, 접안예정은 '대기'로 미리 보여준다. 다른 선사 본선은 가져오지 않는다.
     prio = {"Working": 0, "Berthed": 1, "Planned": 2}
-    todays = [v for v in _hjit_schedule(session, -1, 0) if v.get("status") in prio and _hjit_tracked(v)]
+    todays = [v for v in _hjit_schedule(session, -1, 0) if v.get("status") in prio
+              and (_hjit_tracked(v) or (not only_tracked and v.get("status") != "Planned"))]
     todays.sort(key=lambda v: (prio[v["status"]], (v.get("berthNo") or ""), v.get("etb") or ""))
     rows = []
     for v in todays:
@@ -409,6 +410,9 @@ def fetch_hjit_work_status():
             "load": f"{cl}/{cl + pl}" if total else str(v.get("loadQty") or ""),
         })
     return rows
+
+
+_GWCT_INFO = {}      # 모선항차 -> (선사, 접안, 출항). 본선작업현황 화면에는 선사·시각이 없어 여기서 찾는다(work.py)
 
 
 def fetch_gwct(time_range="week"):
@@ -458,6 +462,7 @@ def fetch_gwct(time_range="week"):
             continue
         _no, berth, voyage, ship_name, _line_voyage, _side, line, eta, etd = cells[:9]
         route = cells[16] if len(cells) > 16 else ""
+        _GWCT_INFO[voyage] = (line, _parse_dt(eta.replace("/", "-")), _parse_dt(etd.replace("/", "-")))
         if not _route_hit(route, GWCT_ROUTES):
             continue
         rows.append({
@@ -816,6 +821,10 @@ def _find_hpnt_table(soup):
     return None
 
 
+_HPNT_ALL = []       # 선석배정에 보이는 모든 모선(걸러내기 전). 본선작업현황(work.py)이 접안 중인 배를 고를 때 쓴다
+_KIT_ALL = []
+
+
 def fetch_hpnt():
     """HPNT(부산항 허치슨터미널) 선석배정현황을 가져온다.
 
@@ -838,6 +847,7 @@ def fetch_hpnt():
     total_pages = max(1, -(-total_count // 20))  # 올림 나눗셈
 
     rows = []
+    del _HPNT_ALL[:]
     for page in range(1, total_pages + 1):
         if page == 1:
             page_soup = soup
@@ -862,6 +872,8 @@ def fetch_hpnt():
             (voyage_code, inout_voy, berth, _bitt, eta, _work, etd, _closing,
              _side, _qty, _qc, ship_name, line, route) = cells[:14]
 
+            _HPNT_ALL.append({"code": voyage_code, "berth": berth, "voyage": f"{voyage_code} {inout_voy}".strip(),
+                              "ship_name": ship_name, "line": line, "eta": _parse_dt(eta), "etd": _parse_dt(etd)})
             if not (_is_dys(line) or _route_hit(route, HPNT_ROUTES)):
                 continue
 
@@ -904,6 +916,7 @@ def fetch_kit():
             "langType": "K", "mainType": "T01", "subType": "01", "optType": "T", "terminal": "KITLIB",
             "startPage": "1"}
     rows, seen, pages, page = [], set(), 1, 1
+    del _KIT_ALL[:]
     while page <= min(pages, 15):
         resp = session.post(url, data=dict(form, currentPage=str(page)), timeout=20)
         resp.raise_for_status()
@@ -918,6 +931,9 @@ def fetch_kit():
             if len(c) < 13:
                 continue
             route, ship_name = c[12], c[10]
+            if _parse_dt(c[4]) and _parse_dt(c[5]) and not any(a["code"] == c[0] for a in _KIT_ALL):
+                _KIT_ALL.append({"code": c[0], "berth": c[2], "voyage": f"{c[0]} {re.sub(' ', '', c[1])}".strip(),
+                                 "ship_name": ship_name, "line": c[11], "eta": _parse_dt(c[4]), "etd": _parse_dt(c[5])})
             if not _route_hit(route, KIT_ROUTES):
                 continue
             eta, etd = _parse_dt(c[4]), _parse_dt(c[5])
