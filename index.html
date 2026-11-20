@@ -785,13 +785,18 @@ function renderStatus() {
   $("statusDetail").textContent = rep; $("statusDetail").style.display = rep ? "" : "none";
   $("spin").classList.toggle("on", !!S.fetching);
   $("refreshBtn").disabled = !!S.fetching;
-  $("subtitle").textContent = `부산 · 인천 · 광양 · 평택 · 군산 실시간 선석 배정 현황 · 선사 DYS 및 지정 항로 · ${WINDOW_DAYS}일 구간 · ${Math.round(S.refresh_sec / 60)}분마다 자동 갱신`;
+  $("subtitle").textContent = `부산 · 인천 · 광양 · 평택 · 군산 실시간 선석 배정 현황 · 선사 DYS 및 지정 항로 · ${WINDOW_DAYS}일 구간 · ${STATIC ? "자동 갱신" : Math.round(S.refresh_sec / 60) + "분마다 자동 갱신"}`;
   renderNextChip();
 }
 function renderNextChip() {
   const chip = $("nextChip");
   if (S.fetching) { chip.textContent = "터미널 조회 중"; return; }
   if (!S.updated_at) { chip.textContent = ""; return; }
+  if (STATIC) {       // 게시 사이트는 수집 간격이 일정하지 않다(GitHub 사정). 다음 갱신을 약속하지 말고 자료가 얼마나 됐는지를 보여 준다
+    const age = Math.max(0, Math.round((Date.now() - parseDT(S.updated_at.replace(" ", "T")).getTime()) / 60000));
+    chip.textContent = age < 1 ? "방금 수집" : age < 60 ? `${age}분 전 수집` : `${Math.floor(age / 60)}시간 ${age % 60}분 전 수집`;
+    return;
+  }
   const next = parseDT(S.updated_at.replace(" ", "T")).getTime() + S.refresh_sec * 1000;
   const left = Math.max(0, Math.round((next - Date.now()) / 60000));
   chip.textContent = left <= 0 ? "곧 자동 갱신" : `다음 갱신 ${left}분 후`;
@@ -2093,9 +2098,8 @@ $("refreshBtn").onclick = async () => {
     await loadData();
     $("spin").classList.remove("on"); $("refreshBtn").disabled = false;
     const at = S.updated_at ? S.updated_at.slice(11, 16) : "-";
-    const left = S.updated_at ? Math.max(0, Math.round((parseDT(S.updated_at.replace(" ", "T")).getTime() + S.refresh_sec * 1000 - Date.now()) / 60000)) : null;
     toast(S.generation !== before ? `새 자료로 갱신했습니다 (${at} 수집)`
-        : `지금이 최신 자료입니다 (${at} 수집) · 다음 자동 수집 ${left == null ? "-" : left <= 0 ? "곧" : left + "분 후"}`);
+        : `지금 올라와 있는 최신 자료입니다 (${at} 수집)`);
     return;
   }
   try {
@@ -2128,7 +2132,7 @@ new ResizeObserver(() => {
 $("status").addEventListener("click", (e) => { e.stopPropagation(); $("status").classList.toggle("open"); });
 document.addEventListener("click", () => $("status").classList.remove("open"));
 addEventListener("touchstart", hideTip, { passive: true });      // 다른 곳을 건드리면 열려 있던 툴팁을 닫는다
-setInterval(() => { renderNextChip(); if (tab !== "work" && tab !== "empty" && tab !== "typhoon" && tab !== "tariff" && tab !== "sur" && tab !== "chg") renderPane(); }, 60000);   // 현재 시각선 1분마다
+setInterval(() => { renderNextChip(); if (tab !== "work" && tab !== "empty" && tab !== "typhoon" && tab !== "tariff" && tab !== "sur" && tab !== "chg" && tab !== "hist") renderPane(); }, 60000);   // 현재 시각선 1분마다
 setInterval(loadData, STATIC ? 60000 : 180000);                                                                           // SSE 가 끊겨도 3분마다 보정
 document.addEventListener("visibilitychange", () => { if (!document.hidden) loadData(); });
 

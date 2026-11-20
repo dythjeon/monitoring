@@ -14,3 +14,4 @@ changes_state.json
 *.xlsx
 tariff.json
 hist/
+trigger_refresh.log
