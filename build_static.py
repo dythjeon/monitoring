@@ -47,14 +47,15 @@ def encrypt_payload(payload, password):
 CARRY_HOURS = 6          # 조회에 실패한 터미널은 이 시간까지 직전 수집값을 대신 보여 준다
 
 
-def carry_over(prev, rows, empty, errors, stats, now):
+def carry_over(prev, rows, empty, errors, stats, now, work=None):
     """이번에 조회가 실패한 터미널의 선석·공컨 자료를 직전 게시본에서 가져와 채운다.
 
     해외에 있는 GitHub 서버에서 국내 터미널 사이트 접속이 가끔 시간 초과되는데, 그때마다 그 터미널이 화면에서
     통째로 비면 '배가 없는 것'과 구분이 안 된다. 가져온 행에는 stale(원래 수집 시각)을 붙이고, CARRY_HOURS 가
     지나도록 계속 실패하면 더는 붙들지 않는다. stats 의 None(조회 실패)은 그대로 둔다."""
+    work = list(work or [])
     if not prev:
-        return rows, empty, errors
+        return rows, empty, errors, work
     prev_at = prev.get("updated_at") or ""
     limit = (now - timedelta(hours=CARRY_HOURS)).strftime("%Y-%m-%d %H:%M:%S")
     notes = []
@@ -81,7 +82,17 @@ def carry_over(prev, rows, empty, errors, stats, now):
         add, names = pick(prev.get("empty"), {r.get("terminal") for r in empty}, "terminal")
         empty = list(empty) + add
         notes += [f"{t} 공컨: 조회 실패로 {s[5:16]} 수집값을 표시 중" for t, s in names.items()]
-    return rows, empty, list(errors) + notes
+    # 본선작업현황: 오류 문구 "본선작업현황(신선대/감만): ..." 의 괄호 안이 그 화면이 맡는 터미널 이름이다
+    failed_terms = set()
+    for e in errors:
+        m = re.match(r"본선작업현황\(([^)]*)\)", str(e))
+        if m:
+            failed_terms.update(t.strip() for t in m.group(1).split("/"))
+    if failed_terms:
+        add, names = pick([w for w in prev.get("work") or [] if w.get("terminal") in failed_terms], set(), "terminal")
+        work += add
+        notes += [f"{t} 작업현황: 조회 실패로 {s[5:16]} 수집값을 표시 중" for t, s in names.items()]
+    return rows, empty, list(errors) + notes, work
 
 
 def previous_payload(password):
@@ -150,7 +161,7 @@ def main():
     password = os.environ.get("SITE_PASSWORD", "").strip()
     state_file = os.path.join(HERE, "changes_state.json")
     prev = previous_payload(password)
-    rows, empty, errors = carry_over(prev, rows, empty, errors, stats, datetime.now())
+    rows, empty, errors, work = carry_over(prev, rows, empty, errors, stats, datetime.now(), work)
     chg = changes.update((prev or {}).get("changes") or changes.load_file(state_file), rows, stats)
     if fx and not fx.get("oil") and ((prev or {}).get("fx") or {}).get("oil"):
         fx["oil"] = prev["fx"]["oil"]          # 유가는 하루 한 번 바뀐다. 이번에 못 읽었으면 직전 값을 그대로 쓴다

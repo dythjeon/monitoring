@@ -291,6 +291,18 @@ WORK_SOURCES = [
 _TRACKED = None      # {(터미널, 정규화한 선명)}. None 이면 거르지 않고 접안 중인 모든 모선
 
 
+def _range_gaps(rows):
+    """작업 화면에는 있는데 그 터미널 선석 목록(걸러내기 전 전체)에는 아예 없는 배 -> 선석 목록의 조회 범위가
+    좁다는 신호다. 우리 모선인지 알 수 없는 상태(항로를 모름)라, 조용히 넘기지 않고 오류 목록에 적는다."""
+    out = []
+    for r in rows:
+        names = scraper._ALL_NAMES.get(r["terminal"])
+        if names and _norm_name(r["ship_name"]) not in names:
+            out.append(f"선석 목록 누락 의심: {r['terminal']} {r['berth']} {r['ship_name']} "
+                       f"(작업 화면에는 있는데 선석 목록에 없음 - 간트에서 빠졌을 수 있음)")
+    return out
+
+
 def _wanted(terminal, ship_name, line):
     if _TRACKED is None:
         return True
@@ -307,7 +319,9 @@ def fetch_all_work(tracked=None):
     try:
         for name, fn in WORK_SOURCES:
             try:
-                rows += [r for r in scraper.with_retry(fn)
+                got = scraper.with_retry(fn)
+                errors += _range_gaps(got)
+                rows += [r for r in got
                          if _wanted(r["terminal"], r["ship_name"], r["line"]) and (tracked is None or r["status"] != "접안예정")]
             except Exception as e:
                 errors.append(f"{name}: {e}")

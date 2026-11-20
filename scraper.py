@@ -162,6 +162,10 @@ BPTC_EXTRA_CODES = ("KHP", "NKX")
 # 본선작업현황 화면에는 항로 칸이 없어서, 선석배정에서 추적 대상으로 잡힌 선명을 기억해 뒀다가 쓴다.
 _BPTC_TRACKED_NAMES = set()
 
+# 터미널 -> 선석 목록에 보이는 모든 선명(걸러내기 전). 본선작업현황 화면에는 있는데 여기 없는 배가 있으면
+# 선석 목록의 조회 범위가 좁다는 뜻이다(2026-11-20: 어제 접안한 배가 'week' 화면에 없어 간트에서 빠졌던 일).
+_ALL_NAMES = {}
+
 
 def fetch_bptc(time_range="week"):
     """BPTC(부산항터미널, 신선대/감만) 선석배정 현황(T)을 가져온다.
@@ -196,11 +200,13 @@ def fetch_bptc(time_range="week"):
             trs += table.find("tbody").find_all("tr")
 
     rows, seen = [], set()
+    _ALL_NAMES["신선대"], _ALL_NAMES["감만"] = set(), set()
     for tr in trs:
         cells = [td.get_text(strip=True) for td in tr.find_all("td")]
         if len(cells) < 10:
             continue
         terminal, berth, voyage, ship_name, _side, line, eta_plan, eta, _work_done, etd = cells[:10]
+        _ALL_NAMES.setdefault(terminal, set()).add(_norm_name(ship_name))
         route = cells[15] if len(cells) > 15 else ""       # 열: ...|양하|선적|S/H|전배|항로|검역
         if not (_is_dys(line) or _route_hit(route, BPTC_ROUTES)):
             continue
@@ -443,11 +449,16 @@ def fetch_gwct(time_range="week"):
         return []
     csrf = csrf.group(1)
 
+    # 'week' 은 오늘 입항분부터만 준다(어제 접안해 아직 붙어 있는 배가 빠진다). 기간 지정으로 사흘 전부터 받는다.
+    span = {"3days": 3, "week": 8, "month": 31}.get(time_range, 8)
+    d0, d1 = datetime.now() - timedelta(days=3), datetime.now() + timedelta(days=span)
     body = {
         "_csrf": csrf,
         "page": "1",
-        "pageSize": "200",
-        "v_time": time_range,
+        "pageSize": "300",
+        "v_time": "term",
+        "fromY": str(d0.year), "fromM": f"{d0.month:02d}", "fromD": f"{d0.day:02d}",
+        "toY": str(d1.year), "toM": f"{d1.month:02d}", "toD": f"{d1.day:02d}",
         "range": "ETB",
     }
     resp = session.post(search_url, data=body,
@@ -468,6 +479,7 @@ def fetch_gwct(time_range="week"):
         _no, berth, voyage, ship_name, _line_voyage, _side, line, eta, etd = cells[:9]
         route = cells[16] if len(cells) > 16 else ""
         _GWCT_INFO[voyage] = (line, _parse_dt(eta.replace("/", "-")), _parse_dt(etd.replace("/", "-")))
+        _ALL_NAMES.setdefault("광양서부", set()).add(_norm_name(ship_name))
         if not _route_hit(route, GWCT_ROUTES):
             continue
         rows.append({
@@ -1050,6 +1062,7 @@ def fetch_pctc(days=14):
         resp.raise_for_status()
         j = resp.json()
         for v in j.get("content") or []:
+            _ALL_NAMES.setdefault("PCTC", set()).add(_norm_name(v.get("VSL_NM")))
             lane = (v.get("IN_LANE") or "").strip().upper()
             if not _route_hit(lane, PCTC_ROUTES):
                 continue
@@ -1110,7 +1123,10 @@ def _gct_post(data):
 def fetch_gct(time_range="month", carrier_code="DYS"):
     """GCT 선석배정 목록에서 선사가 carrier_code 인 것만.
     열: 선석|모선항차|선박명|접안|선사|입항|출항|작업시작|작업완료|반입마감|양하|선적|S/H|전배|항로"""
-    soup = _gct_post({"m": "B", "s": "2", "v_time": time_range, "range": "ETB", "screenPath": "", "callType": ""})
+    d0, d1 = datetime.now() - timedelta(days=3), datetime.now() + timedelta(days=31)
+    soup = _gct_post({"m": "B", "s": "2", "v_time": "term", "range": "ETB", "screenPath": "", "callType": "",
+                      "fromY": str(d0.year), "fromM": f"{d0.month:02d}", "fromD": f"{d0.day:02d}",
+                      "toY": str(d1.year), "toM": f"{d1.month:02d}", "toD": f"{d1.day:02d}"})
     rows = []
     for tr in soup.find_all("tr"):
         cells = [td.get_text(strip=True) for td in tr.find_all("td", recursive=False)]
