@@ -1358,7 +1358,7 @@ function tfMergeCN(T) {
   const merged = cn.filter(r => r.bound === "WEST").map(w => {
     const e = east.get(key(w));
     return { ...w, bound: "", e20: e ? e.e20 : w.e20, e40: e ? e.e40 : w.e40, noEast: !e };
-  }).filter(r => !(r.noEast && r.e20 == null && r.e40 == null));     // EAST 에도 없고 WEST MTY 도 비어 있으면 조회에서 뺀다
+  }).filter(r => (r.f20 != null && r.e20 != null) || (r.f40 != null && r.e40 != null));     // 20'·40' 어느 쪽도 Round 가 안 나오면 조회에서 뺀다
   T.rows = T.rows.filter(r => r.src !== "CN").concat(merged);
 }
 const TF_RULE = "Round = Full + Empty (20' + 20'E · 40' + 40'E) · 상해·태창·난징 등 양쯔강 = WEST Full + EAST Empty";
