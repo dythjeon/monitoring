@@ -973,7 +973,10 @@ function renderGantt(pane, key) {
   const berthW = Math.max(textW("—", BERTH_FS, 400), ...allBerths.map(b => textW(berthLabel(b), BERTH_FS, 400)));
   const sep1 = P + termW + G / 2, sep2 = sep1 + G / 2 + berthW + G / 2;
   // 좁은 화면에서 7일을 한 화면에 욱여넣으면 막대가 점이 된다. 하루 120px 을 지키고 넘치는 만큼 좌우로 민다.
-  const W = Math.max(pane.clientWidth, narrow ? Math.ceil(sep2 + WINDOW_DAYS * 120 + 14) : 860);
+  // 화면 배율이 150% 같은 값이면 칸 폭이 소수(1390.67px)인데 clientWidth 는 반올림(1391)해 준다. 그대로 쓰면 표가
+  // 칸보다 0.3px 넓어져 볼 것도 없는 가로 스크롤 줄이 생긴다. 실제 폭을 내림해서 쓴다.
+  const paneW = Math.min(pane.clientWidth, Math.floor(pane.getBoundingClientRect().width));
+  const W = Math.max(paneW, narrow ? Math.ceil(sep2 + WINDOW_DAYS * 120 + 14) : 860);
   const left = sep2, right = W - 14;       // 선석 열 구분선이 곧 00시 선
   // 구간 밖 다음 입항 안내 줄
   const shown = new Set(usable.map(d => d.terminal));
