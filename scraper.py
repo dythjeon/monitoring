@@ -1141,6 +1141,21 @@ SOURCES = [
 ]
 
 
+def with_retry(fn, tries=2, wait=3):
+    """접속 자체가 안 된 경우(시간 초과·연결 실패)에만 잠깐 쉬었다 다시 시도한다.
+
+    GitHub Actions(해외 서버)에서 국내 터미널 사이트로 가는 접속이 가끔 시간 초과된다(선광신항, BPTC 등).
+    사이트가 응답은 했는데 내용이 이상한 경우는 다시 해도 같으므로 재시도하지 않는다."""
+    import time
+    for i in range(tries):
+        try:
+            return fn()
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            if i == tries - 1:
+                raise
+            time.sleep(wait)
+
+
 def fetch_all():
     """등록된 모든 소스를 크롤링해서 하나의 리스트로 합친다.
 
@@ -1155,7 +1170,7 @@ def fetch_all():
     stats = []
     for name, fn in SOURCES:
         try:
-            rows = fn()
+            rows = with_retry(fn)
         except Exception as e:  # 한 사이트가 실패해도 나머지는 계속 진행
             errors.append(f"{name}: {e}")
             stats.append((name, None))

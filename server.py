@@ -25,7 +25,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-from scraper import (SOURCES, fetch_all, fetch_bptc_work_status, fetch_hjit_work_status, fetch_bptc_empty_status,
+from scraper import (SOURCES, fetch_all, with_retry, fetch_bptc_work_status, fetch_hjit_work_status, fetch_bptc_empty_status,
                      fetch_gwct_empty_status, fetch_e1ct_empty_status, fetch_hjit_empty_status,
                      fetch_pctc_empty_status, fetch_gct_empty_status, fetch_snct_empty_status, fetch_kit_empty_status,
                      lane_of, LANE_COUNTRY, LANE_BY_BOUND)
@@ -121,12 +121,12 @@ def collect():
     except Exception as e:
         data, errors, stats = [], [str(e)], []
     try:
-        work = fetch_bptc_work_status()
+        work = with_retry(fetch_bptc_work_status)
     except Exception as e:
         work = []
         errors = list(errors) + [f"본선작업현황: {e}"]
     try:
-        work = list(work) + fetch_hjit_work_status()
+        work = list(work) + with_retry(fetch_hjit_work_status)
     except Exception as e:
         errors = list(errors) + [f"본선작업현황(한진신항): {e}"]
     empty = []
@@ -139,7 +139,7 @@ def collect():
                       ("국내공컨현황(PCTC)", fetch_pctc_empty_status),
                       ("국내공컨현황(GCT)", fetch_gct_empty_status)):
         try:
-            empty += fn()
+            empty += with_retry(fn)
         except Exception as e:
             errors = list(errors) + [f"{label}: {e}"]
 

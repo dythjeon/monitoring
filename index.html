@@ -668,6 +668,59 @@ function bindTip(node, html) {
 }
 const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
+// ---- 한국 공휴일 ----
+// 날짜 라벨을 빨갛게 칠할 날. 음력 명절(설·부처님오신날·추석)은 브라우저의 한국 음력(dangi)으로 계산하고,
+// 대체공휴일 규칙까지 적용한다. 선거일처럼 그때그때 정해지는 날은 HOLIDAY_EXTRA 에 적는다.
+const HOLIDAY_EXTRA = { "2028-04-12": "국회의원 선거일" };
+const LUNAR_FALLBACK = { 2026: ["2-17", "5-24", "9-25"], 2027: ["2-7", "5-13", "9-15"], 2028: ["1-27", "5-2", "10-3"] };   // 설, 부처님오신날, 추석
+const _holCache = {};
+function lunarDates(y) {            // [설, 부처님오신날, 추석] 의 양력 Date
+  const mk = (m, d) => new Date(y, m - 1, d, 12);
+  try {
+    const f = new Intl.DateTimeFormat("en-u-ca-dangi", { month: "numeric", day: "numeric" });
+    if (f.resolvedOptions().calendar !== "dangi") throw 0;
+    const want = { "1-1": 0, "4-8": 1, "8-15": 2 }, out = [];
+    for (let d = mk(1, 1); d.getFullYear() === y; d = new Date(d.getTime() + 864e5)) {
+      const p = {}; for (const x of f.formatToParts(d)) p[x.type] = x.value;
+      const i = want[p.month + "-" + p.day];            // 윤달은 "4bis" 처럼 나와 걸러진다
+      if (i != null && !out[i]) out[i] = d;
+    }
+    if (out[0] && out[1] && out[2]) return out;
+  } catch {}
+  const fb = LUNAR_FALLBACK[y];
+  return fb ? fb.map(s => mk(...s.split("-").map(Number))) : [];
+}
+function holidaysOf(y) {            // "M-D" -> 이름
+  if (_holCache[y]) return _holCache[y];
+  const H = new Map(), key = (d) => (d.getMonth() + 1) + "-" + d.getDate();
+  const add = (d, n) => { const k = key(d); if (H.has(k)) return false; H.set(k, n); return true; };
+  const day = (d, n) => new Date(d.getTime() + n * 864e5);
+  const subst = (from, name) => {            // from 다음의 첫 평일(토·일·공휴일 제외)
+    let d = day(from, 1);
+    while (d.getDay() === 0 || d.getDay() === 6 || H.has(key(d))) d = day(d, 1);
+    if (d.getFullYear() === y) H.set(key(d), "대체공휴일(" + name + ")");
+  };
+  const fixed = [[1, 1, "신정", 0], [3, 1, "삼일절", 1], [5, 1, "노동절", 1], [5, 5, "어린이날", 1], [6, 6, "현충일", 0], [7, 17, "제헌절", 1],
+                 [8, 15, "광복절", 1], [10, 3, "개천절", 1], [10, 9, "한글날", 1], [12, 25, "성탄절", 1]];
+  const [seol, buddha, chuseok] = lunarDates(y);
+  const singles = fixed.map(([m, d, n, s]) => [new Date(y, m - 1, d, 12), n, s]);
+  if (buddha) singles.push([buddha, "부처님오신날", 1]);
+  const blocks = [[seol, "설날"], [chuseok, "추석"]].filter(b => b[0]);
+  const overlap = [];                        // 다른 공휴일과 겹친 날
+  for (const [d, n] of blocks) for (const o of [-1, 0, 1]) add(day(d, o), o ? n + " 연휴" : n);
+  for (const [d, n, s] of singles) if (!add(d, n) && s) overlap.push([d, n]);
+  for (const [k, n] of Object.entries(HOLIDAY_EXTRA)) { const [yy, m, d] = k.split("-").map(Number); if (yy === y) add(new Date(y, m - 1, d, 12), n); }
+  // 대체공휴일: 명절 연휴는 일요일과 겹칠 때, 나머지는 토·일과 겹칠 때. 다른 공휴일과 겹쳐도 하루를 준다.
+  for (const [d, n] of blocks) {
+    const sundays = [-1, 0, 1].filter(o => day(d, o).getDay() === 0).length;
+    for (let i = 0; i < sundays; i++) subst(day(d, 1), n);
+  }
+  for (const [d, n, s] of singles) if (s && (d.getDay() === 0 || d.getDay() === 6) && H.get(key(d)) === n) subst(d, n);
+  for (const [d, n] of overlap) subst(d, n);
+  return (_holCache[y] = H);
+}
+const holidayName = (d) => holidaysOf(d.getFullYear()).get((d.getMonth() + 1) + "-" + d.getDate()) || "";
+
 // ===================== 헤더/통계/탭 =====================
 function buildTabs() {
   const box = $("tabs"); const sl = box.scrollLeft; box.innerHTML = "";
@@ -852,9 +905,14 @@ function renderGantt(pane, key) {
   for (let day = 0; day < WINDOW_DAYS; day++) {
     const d = new Date(ws.getTime() + day * 864e5);
     const isToday = d.toDateString() === now.toDateString();
-    const col = d.getDay() === 6 ? C.sat : d.getDay() === 0 ? C.sun : C.text;
-    svg.appendChild(el("text", { x: xOf(new Date(d.getTime() + 12 * 36e5)), y: 17, "text-anchor": "middle",
-      "font-size": isToday ? 14.5 : 13.5, "font-weight": isToday ? 700 : 500, fill: col }, fmtDay(d)));
+    const hol = holidayName(d);           // 공휴일(대체공휴일 포함)은 일요일처럼 빨갛게, 자리가 되면 이름도 붙인다
+    const col = hol || d.getDay() === 0 ? C.sun : d.getDay() === 6 ? C.sat : C.text;
+    const fs = isToday ? 14.5 : 13.5, fw = isToday ? 700 : 500;
+    const short = hol.replace(/^대체공휴일.*/, "대체공휴일");
+    const label = hol && textW(fmtDay(d) + " " + short, fs, fw) <= perDay - 10 ? fmtDay(d) + " " + short : fmtDay(d);
+    const t = el("text", { x: xOf(new Date(d.getTime() + 12 * 36e5)), y: 17, "text-anchor": "middle", "font-size": fs, "font-weight": fw, fill: col }, label);
+    if (hol) t.appendChild(el("title", {}, hol));
+    svg.appendChild(t);
   }
 
   // ---- 행 헤더: 터미널(병합) | 선석
