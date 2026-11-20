@@ -92,6 +92,7 @@ main { flex: 1; display: flex; flex-direction: column; max-width: 1480px; width:
 .work .wbar { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin: 2px 4px 12px; }
 .work .wbar .chip { border: 1px solid var(--border); background: var(--card); border-radius: 8px; padding: 5px 12px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--text); }
 .work .wbar .chip:hover, .work .wbar .chip.on { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+.work .wbar b { font-size: 14px; }
 .work .wbar .m { color: var(--muted); font-size: 11.5px; margin-left: 4px; }
 .work i.me { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--primary); margin-right: 6px; vertical-align: 1px; }
 .work .row .lb span { color: var(--text); font-weight: 600; }
@@ -739,6 +740,9 @@ function buildTabs() {
   for (const [key, label] of TABS) {
     const b = document.createElement("button");
     b.className = "tab" + (key === tab ? " on" : ""); b.textContent = label; b.dataset.key = key;
+    if (key === "work" && S.work && S.work.length) {      // 지금 작업 중인 척수
+      const s = document.createElement("span"); s.className = "bd"; s.textContent = S.work.length; b.appendChild(s);
+    }
     if (key === "chg") {            // 최근 24시간 안에 바뀐 건수(신규 제외)를 탭에 붙인다
       const n = chgRecent().filter(e => e.kind !== "new").length;
       if (n) { const s = document.createElement("span"); s.className = "bd"; s.textContent = n > 99 ? "99+" : n; b.appendChild(s); }
@@ -1051,7 +1055,6 @@ function renderGantt(pane, key) {
 
 // ===================== 본선작업현황 =====================
 const progressColor = (p) => p < 30 ? "#fa5252" : p < 70 ? "#f5a524" : "#12b886";
-let workFilter = (() => { try { return sessionStorage.getItem("bm.work") || "all"; } catch { return "all"; } })();
 function renderWork(pane) {
   // 지금 접안해 있는 모든 모선(터미널 본선작업현황 화면 기준). ours = 선석 탭에서 추적하는 우리 모선.
   //   진행률 = (양하 완료 + 적하 완료) / (양하 합계 + 적하 합계)
@@ -1061,19 +1064,15 @@ function renderWork(pane) {
     const na = parseInt((a.berth || "").match(/\d+/) || 999), nb = parseInt((b.berth || "").match(/\d+/) || 999);
     return ord(a.terminal) - ord(b.terminal) || na - nb || (a.berth || "").localeCompare(b.berth || "") || (a.eta || "").localeCompare(b.eta || "");
   });
-  const mine = all.filter(d => d.ours);
-  const rows = workFilter === "ours" ? mine : all;
+  const rows = all;
   const box = document.createElement("div"); box.className = "work";
   const bar = document.createElement("div"); bar.className = "wbar";
-  bar.innerHTML = `<button type="button" class="chip${workFilter !== "ours" ? " on" : ""}" data-f="all">접안 중 전체 ${all.length}</button>
-    <button type="button" class="chip${workFilter === "ours" ? " on" : ""}" data-f="ours"><i class="me"></i>우리 모선 ${mine.length}</button>
-    <span class="m">진행률 = 완료 ÷ 합계 (양하 + 적하) · 오른쪽 숫자는 남은 개수 / 합계</span>`;
-  bar.querySelectorAll(".chip").forEach(b => b.onclick = () => { workFilter = b.dataset.f; try { sessionStorage.setItem("bm.work", workFilter); } catch {} renderWork(pane); });
+  bar.innerHTML = `<b>작업 중 ${all.length}척</b><span class="m">선석 탭에 나오는 모선이 접안해 작업 중일 때만 표시 · 진행률 = 완료 ÷ 합계 (양하 + 적하) · 오른쪽 숫자는 남은 개수 / 합계</span>`;
   box.appendChild(bar);
   pane.appendChild(box);
   if (!rows.length) {
     const m = document.createElement("div"); m.className = "wnone";
-    m.textContent = !S.updated_at ? "불러오는 중..." : workFilter === "ours" && all.length ? "지금 접안해 작업 중인 우리 모선이 없습니다" : "현재 작업 중인 본선이 없습니다";
+    m.textContent = !S.updated_at ? "불러오는 중..." : "현재 작업 중인 본선이 없습니다";
     box.appendChild(m);
     return;
   }
@@ -1092,10 +1091,10 @@ function renderWork(pane) {
     const color = planned ? "#9aa3b2" : progressColor(pct), inside = pct >= (slim ? 70 : 22);
     const over = slim && !inside && pct >= 30;
     const row = document.createElement("div");
-    row.className = "row" + (d.ours ? " ours" : "") + (prevTerm !== null && prevTerm !== d.terminal ? " sep" : "");
+    row.className = "row" + (prevTerm !== null && prevTerm !== d.terminal ? " sep" : "");
     prevTerm = d.terminal;
     const sub = [d.status && d.status !== "작업중" ? d.status : "", d.voyage || ""].filter(Boolean).join(" · ");
-    row.innerHTML = `<div class="lb" style="color:${REGION_COLOR[TERMINAL_REGION[d.terminal]] || C.text}">${d.ours ? `<i class="me"></i>` : ""}${esc(d.terminal)} <span>${esc(d.berth)}${/^\d+$/.test(d.berth || "") ? "선석" : ""}</span></div>
+    row.innerHTML = `<div class="lb" style="color:${REGION_COLOR[TERMINAL_REGION[d.terminal]] || C.text}">${esc(d.terminal)} <span>${esc(d.berth)}${/^\d+$/.test(d.berth || "") ? "선석" : ""}</span></div>
       <div class="track">${pct > 0 ? `<div class="fill" style="width:${pct}%;background:${color}"></div>` : ""}
         <div class="txt" style="${inside ? `left:${pct / 2}%;transform:translate(-50%,-50%);color:#fff` : over ? `left:8px;color:${C.text}` : `left:calc(${pct}% + 8px);color:${C.text}`}">
           <div class="n">${esc(d.ship_name)}${d.line ? `(${esc(d.line)})` : ""}</div>${sub ? `<div class="vy" style="${inside ? "" : "color:" + C.muted}">${esc(sub)}</div>` : ""}</div>
@@ -1104,7 +1103,7 @@ function renderWork(pane) {
     const time = d.eta && d.etd ? `\n접안 ${fmtDT(parseDT(d.eta))} ~ 출항 ${fmtDT(parseDT(d.etd))}` : "";
     const qty = known ? `\n양하 ${fmtN(d.d_done)} / ${fmtN(d.d_total)}  ·  적하 ${fmtN(d.l_done)} / ${fmtN(d.l_total)}\n남은 작업 ${fmtN(left)}개 (합계 ${fmtN(total)}개)`
                       : (d.discharge || d.load ? `\n양하 ${esc(d.discharge || "-")} / 적하 ${esc(d.load || "-")}` : "");
-    bindTip(row, `<b>${esc(d.ship_name)}${d.line ? `(${esc(d.line)})` : ""}</b>${d.voyage ? " · " + esc(d.voyage) : ""}\n${esc(d.terminal)} ${esc(d.berth)}${d.ours ? "  ·  우리 모선" : ""}${time}\n진행률 ${pct}%${qty}`);
+    bindTip(row, `<b>${esc(d.ship_name)}${d.line ? `(${esc(d.line)})` : ""}</b>${d.voyage ? " · " + esc(d.voyage) : ""}\n${esc(d.terminal)} ${esc(d.berth)}${time}\n진행률 ${pct}%${qty}`);
     box.appendChild(row);
   }
 }

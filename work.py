@@ -64,7 +64,7 @@ def bptc():
 def hjit():
     """컨테이너 목록에서 QC 가 배정된 것만 세어 완료(C)/계획(P)으로 나눈다(터미널 화면과 같은 계산)."""
     rows = []
-    for w in scraper.fetch_hjit_work_status(only_tracked=False):
+    for w in scraper.fetch_hjit_work_status(only_tracked=_TRACKED is not None):
         d = [_int(x) for x in (w.get("discharge") or "").split("/")]
         l = [_int(x) for x in (w.get("load") or "").split("/")]
         if len(d) == 2 and len(l) == 2:
@@ -86,6 +86,8 @@ def _hktl(base, term_code, terminal, vessels, key):
     rows = []
     for v in vessels:
         if not (v["eta"] and v["etd"] and v["eta"] <= now <= v["etd"] + timedelta(hours=3)):
+            continue
+        if not _wanted(terminal, v["ship_name"], v["line"]):      # 모선마다 화면을 따로 열어야 해서 미리 거른다
             continue
         resp = session.post(f"{base}/T03/bonsundetail.jsp",
                             data=dict({"langType": "K", "mainType": "T03", "subType": "00", "optType": "T",
@@ -286,12 +288,29 @@ WORK_SOURCES = [
 ]
 
 
-def fetch_all_work():
-    """모든 터미널의 접안 모선 작업현황. 반환: (행 목록, 오류 문구 목록)"""
+_TRACKED = None      # {(터미널, 정규화한 선명)}. None 이면 거르지 않고 접안 중인 모든 모선
+
+
+def _wanted(terminal, ship_name, line):
+    if _TRACKED is None:
+        return True
+    return (terminal, _norm_name(ship_name)) in _TRACKED or scraper._is_dys(line)
+
+
+def fetch_all_work(tracked=None):
+    """본선작업현황. tracked = 선석 탭에서 추적 중인 {(터미널, 정규화한 선명)} 을 주면 그 모선(과 선사 DYS)이
+    지금 접안해 있을 때만 돌려준다(접안예정은 제외). None 이면 접안 중인 모든 모선.
+    반환: (행 목록, 오류 문구 목록)"""
+    global _TRACKED
+    _TRACKED = tracked
     rows, errors = [], []
-    for name, fn in WORK_SOURCES:
-        try:
-            rows += scraper.with_retry(fn)
-        except Exception as e:
-            errors.append(f"{name}: {e}")
+    try:
+        for name, fn in WORK_SOURCES:
+            try:
+                rows += [r for r in scraper.with_retry(fn)
+                         if _wanted(r["terminal"], r["ship_name"], r["line"]) and (tracked is None or r["status"] != "접안예정")]
+            except Exception as e:
+                errors.append(f"{name}: {e}")
+    finally:
+        _TRACKED = None
     return rows, errors
