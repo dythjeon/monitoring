@@ -1339,6 +1339,8 @@ function loadTariff() {
         catch { throw "요율 파일의 비밀번호가 사이트 비밀번호와 다릅니다 (tariff_update.bat 을 다시 실행해 주세요)"; }
       }
       tfMergeCN(j);
+      // 20'·40' 어느 쪽도 Round(Full + Empty)가 안 나오는 줄은 조회에서 뺀다 (홍콩·셔코우 포함)
+      j.rows = j.rows.filter(r => (r.f20 != null && r.e20 != null) || (r.f40 != null && r.e40 != null));
       TF.data = j;
     } catch (e) { TF.err = typeof e === "string" ? e : "요율 자료를 읽을 수 없습니다"; }
     TF.loading = null;
