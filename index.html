@@ -1316,6 +1316,7 @@ function loadTariff() {
         try { j = await decryptWith(memKey, j); }
         catch { throw "요율 파일의 비밀번호가 사이트 비밀번호와 다릅니다 (tariff_update.bat 을 다시 실행해 주세요)"; }
       }
+      tfMergeCN(j);
       TF.data = j;
     } catch (e) { TF.err = typeof e === "string" ? e : "요율 자료를 읽을 수 없습니다"; }
     TF.loading = null;
@@ -1323,10 +1324,26 @@ function loadTariff() {
   })();
   return TF.loading;
 }
+// 양쯔강 내륙항 자료(China Inland Port Cost)는 WEST·EAST 두 시트로 나뉘어 있다.
+// 요율 = WEST 시트의 Full cost + EAST 시트의 MTY cost (같은 도착지·Barge사·환적항끼리 짝짓는다).
+// T/S charge·EQ·비고는 WEST 시트 것을 쓴다. EAST 에 짝이 없으면 Empty 를 알 수 없어 Round 는 –.
+// WEST 에 없고 EAST 에만 있는 줄은 Full 기준이 없으므로 목록에서 뺀다.
+function tfMergeCN(T) {
+  const cn = T.rows.filter(r => r.src === "CN");
+  if (!cn.some(r => r.bound === "EAST")) return;
+  const key = r => [r.origin, tfNorm(r.name), tfNorm(r.company), r.cur || "USD"].join("|");
+  const east = new Map(cn.filter(r => r.bound === "EAST").map(r => [key(r), r]));
+  const merged = cn.filter(r => r.bound === "WEST").map(w => {
+    const e = east.get(key(w));
+    return { ...w, bound: "", e20: e ? e.e20 : null, e40: e ? e.e40 : null, noEast: !e };
+  });
+  T.rows = T.rows.filter(r => r.src !== "CN").concat(merged);
+}
+const TF_RULE = "Round = Full + Empty (20' + 20'E · 40' + 40'E) · 상해·태창·난징 등 양쯔강 = WEST Full + EAST Empty";
 function tfChips() {
   const chips = $("tfChips"); if (!chips || !TF.data) return;
   const T = TF.data;
-  $("tfMeta").textContent = `Round = Full + Empty (20' + 20'E · 40' + 40'E) · 자료 ${T.made_at} 변환`;
+  $("tfMeta").textContent = `${TF_RULE} · 자료 ${T.made_at} 변환`;
   chips.innerHTML = `<span class="m">출발지</span>` + Object.keys(T.origins).map(c =>
     `<button type="button" class="chip" data-o="${c}">${c} · ${esc((T.origins[c] || [])[0] || c)}</button>`).join("");
   chips.querySelectorAll(".chip").forEach(b => b.onclick = () => { $("tfO").value = b.dataset.o; $("tfD").focus(); });
@@ -1396,7 +1413,7 @@ function renderTariff(pane) {
   if (!TF.built) {
     TF.built = true;
     const qs = new URLSearchParams(location.search);
-    pane.innerHTML = `<div class="tf"><div class="head"><h2>Barge Tariff</h2><span class="m" id="tfMeta">Round = Full + Empty (20' + 20'E · 40' + 40'E)</span></div>
+    pane.innerHTML = `<div class="tf"><div class="head"><h2>Barge Tariff</h2><span class="m" id="tfMeta">${TF_RULE}</span></div>
       <form class="form" id="tfForm" autocomplete="off">
         <div class="fld"><label for="tfO">출발지 (환적항)</label><input id="tfO" placeholder="예: HKHKG 또는 HONG KONG" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
         <div class="fld"><label for="tfD">도착지</label><input id="tfD" placeholder="예: CNHUA 또는 HUANGPU" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
@@ -1473,7 +1490,8 @@ function tariffSearch() {
     const tags = [], rm = [];
     if (r.bound) tags.push(`<span class="tag">${esc(r.bound)}</span>`);
     if (r.mode) tags.push(`<span class="tag">${esc(r.mode)}</span>`);
-    if (r.ts && r.ts.length) rm.push(`T/S RMB ${esc(r.ts.join(" / "))}`);
+    if (r.ts && r.ts.length) rm.push(`T/S charge RMB ${esc(r.ts.join(" / "))}`);
+    if (r.noEast) rm.push("EAST 시트에 없음(Empty 미확인)");
     if (r.eq && r.eq.some(x => x && x !== "/")) rm.push(`EQ ${esc(r.eq.join(" / "))}`);
     if (r.valid) rm.push(esc(r.valid));
     if (r.remark) rm.push(esc(r.remark));
