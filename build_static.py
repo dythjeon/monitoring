@@ -204,6 +204,8 @@ def main():
     ok = sum(1 for _n, c in stats if c is not None)
     print(f"[{now:%Y-%m-%d %H:%M:%S}] site/ 생성: 선석 {len(rows)}건 · 작업 {len(work)}건 · "
           f"{'암호화됨' if password else '잠금 없음(평문)'} · 공컨 {len(empty)}건 · 조회 {ok}/{len(stats)} · 오류 {len(errors)}건")
+    oil = (fx or {}).get("oil")
+    print("   국제유가:", f"{oil.get('date')} 기준 {len(oil.get('items') or [])}종" if oil else "읽지 못함")
     for e in errors:
         print("   !", e)
 
