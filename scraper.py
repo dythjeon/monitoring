@@ -184,17 +184,19 @@ def fetch_bptc(time_range="week"):
     headers = dict(HEADERS)
     headers["Referer"] = referer
 
-    resp = requests.post(url, data=body, headers=headers, timeout=15)
-    resp.raise_for_status()
-    resp.encoding = resp.apparent_encoding or "utf-8"
+    # 'week'/'month' 는 오늘 새벽 이후 입항분부터만 준다. 어제 접안해 아직 붙어 있는 배(예: 2026-11-20 의
+    # HEUNG-A HAIPHONG)는 '3days' 화면에만 있어서, 두 화면을 합친다.
+    trs = []
+    for rng in dict.fromkeys(("3days", time_range)):
+        resp = requests.post(url, data=dict(body, v_time=rng), headers=headers, timeout=15)
+        resp.raise_for_status()
+        resp.encoding = resp.apparent_encoding or "utf-8"
+        table = BeautifulSoup(resp.text, "html.parser").find("table", class_="tabletypeC")
+        if table is not None and table.find("tbody") is not None:
+            trs += table.find("tbody").find_all("tr")
 
-    soup = BeautifulSoup(resp.text, "html.parser")
-    table = soup.find("table", class_="tabletypeC")
-    if table is None or table.find("tbody") is None:
-        return []
-
-    rows = []
-    for tr in table.find("tbody").find_all("tr"):
+    rows, seen = [], set()
+    for tr in trs:
         cells = [td.get_text(strip=True) for td in tr.find_all("td")]
         if len(cells) < 10:
             continue
@@ -202,6 +204,9 @@ def fetch_bptc(time_range="week"):
         route = cells[15] if len(cells) > 15 else ""       # 열: ...|양하|선적|S/H|전배|항로|검역
         if not (_is_dys(line) or _route_hit(route, BPTC_ROUTES)):
             continue
+        if (terminal, voyage, ship_name) in seen:
+            continue
+        seen.add((terminal, voyage, ship_name))
         _BPTC_TRACKED_NAMES.add(_norm_name(ship_name))
         rows.append({
             "source": "BPTC",
@@ -342,7 +347,7 @@ def fetch_hjit(period_days=14, base_date=None):
     """
     session = _hjit_session()
     rows = []
-    for v in _hjit_schedule(session, -1, period_days):
+    for v in _hjit_schedule(session, -3, period_days):
         if not _hjit_tracked(v):
             continue
         rows.append({
@@ -559,7 +564,7 @@ def fetch_snct(line_code="KHP", days=21):
     rows, seen = [], set()
     for page in range(1, 6):
         resp = requests.post(url, data={"isSearch": "Y", "page": str(page), "ROUTE": line_code,
-                                        "strdStDate": (today - timedelta(days=1)).strftime("%Y-%m-%d"),
+                                        "strdStDate": (today - timedelta(days=3)).strftime("%Y-%m-%d"),
                                         "strdEdDate": (today + timedelta(days=days)).strftime("%Y-%m-%d")},
                              headers=HEADERS, timeout=15)
         resp.raise_for_status()
@@ -837,7 +842,10 @@ def fetch_hpnt():
     session = requests.Session()
     session.headers.update(HEADERS)
 
-    resp = session.get(url, timeout=15)
+    # 기본 화면은 오늘 입항분부터만 보여 줘서 어제 접안해 아직 작업 중인 배가 빠진다. 사흘 전 날짜로 조회한다.
+    since = datetime.now() - timedelta(days=3)
+    since_form = {"year": str(since.year), "month": f"{since.month:02d}", "day": f"{since.day:02d}", "startPage": "1"}
+    resp = session.post(url, data=dict(since_form, currentPage="1"), timeout=15)
     resp.raise_for_status()
     resp.encoding = resp.apparent_encoding or "euc-kr"
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -852,11 +860,7 @@ def fetch_hpnt():
         if page == 1:
             page_soup = soup
         else:
-            today = datetime.now()
-            body = {"year": str(today.year), "month": f"{today.month:02d}",
-                    "day": f"{today.day:02d}",
-                    "currentPage": str(page), "startPage": "1"}
-            resp = session.post(url, data=body, timeout=15)
+            resp = session.post(url, data=dict(since_form, currentPage=str(page)), timeout=15)
             resp.raise_for_status()
             resp.encoding = resp.apparent_encoding or "euc-kr"
             page_soup = BeautifulSoup(resp.text, "html.parser")
@@ -911,7 +915,7 @@ def fetch_kit():
     url = f"{KIT_BASE}/T01/sunsuk.jsp"
     session = requests.Session()
     session.headers.update(HEADERS)
-    today = datetime.now() - timedelta(days=1)
+    today = datetime.now() - timedelta(days=3)
     form = {"year": str(today.year), "month": f"{today.month:02d}", "day": f"{today.day:02d}", "vessel": "",
             "langType": "K", "mainType": "T01", "subType": "01", "optType": "T", "terminal": "KITLIB",
             "startPage": "1"}
@@ -1035,7 +1039,7 @@ def fetch_pctc(days=14):
     session = requests.Session()
     session.headers.update(HEADERS)
     session.get(f"{PCTC_BASE}/esvc/vessel/berthScheduleT", timeout=15).raise_for_status()
-    start = datetime.now() - timedelta(days=1)
+    start = datetime.now() - timedelta(days=3)
     end = datetime.now() + timedelta(days=days)
     rows, page = [], 1
     while page <= 10:
